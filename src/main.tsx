@@ -14,6 +14,11 @@ window.addEventListener("unhandledrejection", (event) => {
   event.preventDefault();
 });
 
+// 우클릭 컨텍스트 메뉴 비활성화
+window.addEventListener("contextmenu", (event) => {
+  event.preventDefault();
+});
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />
