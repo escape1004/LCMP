@@ -13,7 +13,7 @@ pub async fn get_playlists() -> Result<PlaylistList, String> {
     let conn = get_connection().map_err(|e| e.to_string())?;
     
     let mut stmt = conn
-        .prepare("SELECT id, name, description, is_dynamic, filter_tags, filter_mode, created_at, updated_at FROM playlists ORDER BY created_at DESC")
+        .prepare("SELECT id, name, description, is_dynamic, filter_tags, filter_mode, \"order\", created_at, updated_at FROM playlists ORDER BY \"order\" ASC, created_at DESC")
         .map_err(|e| e.to_string())?;
     
     let playlist_iter = stmt
@@ -39,16 +39,21 @@ pub async fn create_playlist(
     let is_dynamic_value: i32 = if is_dynamic.unwrap_or(false) { 1 } else { 0 };
     let description_str = description.unwrap_or_default();
     
+    // 기존 플레이리스트 개수로 order 설정
+    let playlist_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM playlists", [], |row| row.get(0))
+        .unwrap_or(0);
+    
     conn.execute(
-        "INSERT INTO playlists (name, description, is_dynamic) VALUES (?1, ?2, ?3)",
-        params![name, description_str, is_dynamic_value],
+        "INSERT INTO playlists (name, description, is_dynamic, \"order\") VALUES (?1, ?2, ?3, ?4)",
+        params![name, description_str, is_dynamic_value, playlist_count],
     )
     .map_err(|e| e.to_string())?;
     
     let id = conn.last_insert_rowid();
     
     let mut stmt = conn
-        .prepare("SELECT id, name, description, is_dynamic, filter_tags, filter_mode, created_at, updated_at FROM playlists WHERE id = ?1")
+        .prepare("SELECT id, name, description, is_dynamic, filter_tags, filter_mode, \"order\", created_at, updated_at FROM playlists WHERE id = ?1")
         .map_err(|e| e.to_string())?;
     
     let playlist = stmt
@@ -77,7 +82,7 @@ pub async fn update_playlist(
     .map_err(|e| e.to_string())?;
     
     let mut stmt = conn
-        .prepare("SELECT id, name, description, is_dynamic, filter_tags, filter_mode, created_at, updated_at FROM playlists WHERE id = ?1")
+        .prepare("SELECT id, name, description, is_dynamic, filter_tags, filter_mode, \"order\", created_at, updated_at FROM playlists WHERE id = ?1")
         .map_err(|e| e.to_string())?;
     
     let playlist = stmt
@@ -85,6 +90,31 @@ pub async fn update_playlist(
         .map_err(|e| e.to_string())?;
     
     Ok(playlist)
+}
+
+#[tauri::command]
+pub async fn update_playlist_order(playlist_ids: Vec<i64>) -> Result<(), String> {
+    if playlist_ids.is_empty() {
+        return Ok(());
+    }
+    
+    let mut conn = get_connection().map_err(|e| e.to_string())?;
+    
+    // 트랜잭션 시작
+    let tx = conn.transaction().map_err(|e| format!("트랜잭션 시작 실패: {}", e))?;
+    
+    for (index, playlist_id) in playlist_ids.iter().enumerate() {
+        tx.execute(
+            "UPDATE playlists SET \"order\" = ?1 WHERE id = ?2",
+            params![index as i64, playlist_id],
+        )
+        .map_err(|e| format!("플레이리스트 순서 업데이트 실패 (id: {}, index: {}): {}", playlist_id, index, e))?;
+    }
+    
+    // 트랜잭션 커밋
+    tx.commit().map_err(|e| format!("트랜잭션 커밋 실패: {}", e))?;
+    
+    Ok(())
 }
 
 #[tauri::command]

@@ -9,6 +9,7 @@ interface FolderStore {
   loadFolders: () => Promise<void>;
   addFolder: (path: string, name?: string) => Promise<void>;
   updateFolder: (folderId: number, name: string) => Promise<void>;
+  updateFolderOrder: (folderIds: number[]) => Promise<void>;
   removeFolder: (folderId: number) => Promise<void>;
   selectFolder: (folderId: number | null) => void;
 }
@@ -50,6 +51,19 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
     } catch (error) {
       console.error('Failed to update folder:', error);
       throw error;
+    }
+  },
+
+  updateFolderOrder: async (folderIds: number[]) => {
+    try {
+      await invoke('update_folder_order', { folderIds });
+      // 순서 업데이트 후 폴더 목록 다시 로드
+      const result = await invoke<{ folders: Folder[] }>('get_folders');
+      set({ folders: result.folders });
+    } catch (error) {
+      console.error('Failed to update folder order:', error);
+      // 에러를 다시 throw하지 않고 로그만 남김
+      // UI는 원래 상태를 유지
     }
   },
 

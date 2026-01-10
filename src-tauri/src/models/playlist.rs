@@ -8,6 +8,7 @@ pub struct Playlist {
     pub is_dynamic: i32, // 0: static, 1: dynamic
     pub filter_tags: Option<String>, // JSON array
     pub filter_mode: Option<String>, // "AND" or "OR"
+    pub order: i64,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -21,8 +22,9 @@ impl Playlist {
             is_dynamic: row.get(3)?,
             filter_tags: row.get(4)?,
             filter_mode: row.get(5)?,
-            created_at: row.get(6)?,
-            updated_at: row.get(7)?,
+            order: row.get(6)?,
+            created_at: row.get(7)?,
+            updated_at: row.get(8)?,
         })
     }
 }

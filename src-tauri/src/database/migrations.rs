@@ -60,10 +60,17 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             path TEXT NOT NULL UNIQUE,
             name TEXT,
+            \"order\" INTEGER DEFAULT 0,
             added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )",
         [],
     )?;
+    
+    // 기존 테이블에 order 컬럼 추가 (마이그레이션)
+    conn.execute(
+        "ALTER TABLE folders ADD COLUMN \"order\" INTEGER DEFAULT 0",
+        [],
+    ).ok(); // 이미 존재하면 무시
 
     // playlists 테이블
     conn.execute(
@@ -74,11 +81,18 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             is_dynamic INTEGER DEFAULT 0,
             filter_tags TEXT,
             filter_mode TEXT DEFAULT 'OR',
+            \"order\" INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )",
         [],
     )?;
+    
+    // 기존 테이블에 order 컬럼 추가 (마이그레이션)
+    conn.execute(
+        "ALTER TABLE playlists ADD COLUMN \"order\" INTEGER DEFAULT 0",
+        [],
+    ).ok(); // 이미 존재하면 무시
 
     // playlist_songs 테이블 (다대다 관계)
     conn.execute(

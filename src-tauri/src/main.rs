@@ -7,8 +7,8 @@ mod models;
 
 use database::{get_connection, run_migrations};
 use commands::{
-    get_folders, add_folder, update_folder, remove_folder,
-    get_playlists, create_playlist, update_playlist, remove_playlist,
+    get_folders, add_folder, update_folder, update_folder_order, remove_folder,
+    get_playlists, create_playlist, update_playlist, update_playlist_order, remove_playlist,
     get_songs_by_folder, get_songs_by_playlist, get_all_songs,
 };
 
@@ -30,10 +30,12 @@ fn main() {
             get_folders,
             add_folder,
             update_folder,
+            update_folder_order,
             remove_folder,
             get_playlists,
             create_playlist,
             update_playlist,
+            update_playlist_order,
             remove_playlist,
             get_songs_by_folder,
             get_songs_by_playlist,

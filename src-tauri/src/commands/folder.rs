@@ -15,7 +15,7 @@ pub async fn get_folders() -> Result<FolderList, String> {
     let conn = get_connection().map_err(|e| e.to_string())?;
     
     let mut stmt = conn
-        .prepare("SELECT id, path, name, added_at FROM folders ORDER BY added_at DESC")
+        .prepare("SELECT id, path, name, \"order\", added_at FROM folders ORDER BY \"order\" ASC, added_at DESC")
         .map_err(|e| e.to_string())?;
     
     let folder_iter = stmt
@@ -39,9 +39,14 @@ pub async fn add_folder(path: String, name: Option<String>) -> Result<Folder, St
         return Err("폴더가 존재하지 않습니다".to_string());
     }
     
+    // 기존 폴더 개수로 order 설정
+    let folder_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM folders", [], |row| row.get(0))
+        .unwrap_or(0);
+    
     conn.execute(
-        "INSERT INTO folders (path, name) VALUES (?1, ?2)",
-        [&path, &name.unwrap_or_default()],
+        "INSERT INTO folders (path, name, \"order\") VALUES (?1, ?2, ?3)",
+        params![path, name.unwrap_or_default(), folder_count],
     )
     .map_err(|e| e.to_string())?;
     
@@ -51,7 +56,7 @@ pub async fn add_folder(path: String, name: Option<String>) -> Result<Folder, St
     scan_folder_for_songs(&conn, &path).map_err(|e| e.to_string())?;
     
     let mut stmt = conn
-        .prepare("SELECT id, path, name, added_at FROM folders WHERE id = ?1")
+        .prepare("SELECT id, path, name, \"order\", added_at FROM folders WHERE id = ?1")
         .map_err(|e| e.to_string())?;
     
     let folder = stmt
@@ -131,7 +136,7 @@ pub async fn update_folder(folder_id: i64, name: Option<String>) -> Result<Folde
     .map_err(|e| e.to_string())?;
     
     let mut stmt = conn
-        .prepare("SELECT id, path, name, added_at FROM folders WHERE id = ?1")
+        .prepare("SELECT id, path, name, \"order\", added_at FROM folders WHERE id = ?1")
         .map_err(|e| e.to_string())?;
     
     let folder = stmt
@@ -142,10 +147,35 @@ pub async fn update_folder(folder_id: i64, name: Option<String>) -> Result<Folde
 }
 
 #[tauri::command]
+pub async fn update_folder_order(folder_ids: Vec<i64>) -> Result<(), String> {
+    if folder_ids.is_empty() {
+        return Ok(());
+    }
+    
+    let mut conn = get_connection().map_err(|e| e.to_string())?;
+    
+    // 트랜잭션 시작
+    let tx = conn.transaction().map_err(|e| format!("트랜잭션 시작 실패: {}", e))?;
+    
+    for (index, folder_id) in folder_ids.iter().enumerate() {
+        tx.execute(
+            "UPDATE folders SET \"order\" = ?1 WHERE id = ?2",
+            params![index as i64, folder_id],
+        )
+        .map_err(|e| format!("폴더 순서 업데이트 실패 (id: {}, index: {}): {}", folder_id, index, e))?;
+    }
+    
+    // 트랜잭션 커밋
+    tx.commit().map_err(|e| format!("트랜잭션 커밋 실패: {}", e))?;
+    
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn remove_folder(folder_id: i64) -> Result<(), String> {
     let conn = get_connection().map_err(|e| e.to_string())?;
     
-    conn.execute("DELETE FROM folders WHERE id = ?1", [folder_id])
+    conn.execute("DELETE FROM folders WHERE id = ?1", params![folder_id])
         .map_err(|e| e.to_string())?;
     
     Ok(())

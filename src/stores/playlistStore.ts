@@ -9,6 +9,7 @@ interface PlaylistStore {
   loadPlaylists: () => Promise<void>;
   createPlaylist: (name: string, description?: string, isDynamic?: boolean) => Promise<void>;
   updatePlaylist: (playlistId: number, name: string, description?: string, isDynamic?: boolean) => Promise<void>;
+  updatePlaylistOrder: (playlistIds: number[]) => Promise<void>;
   removePlaylist: (playlistId: number) => Promise<void>;
   selectPlaylist: (playlistId: number | null) => void;
 }
@@ -59,6 +60,19 @@ export const usePlaylistStore = create<PlaylistStore>((set, get) => ({
     } catch (error) {
       console.error('Failed to update playlist:', error);
       throw error;
+    }
+  },
+
+  updatePlaylistOrder: async (playlistIds: number[]) => {
+    try {
+      await invoke('update_playlist_order', { playlistIds });
+      // 순서 업데이트 후 플레이리스트 목록 다시 로드
+      const result = await invoke<{ playlists: Playlist[] }>('get_playlists');
+      set({ playlists: result.playlists });
+    } catch (error) {
+      console.error('Failed to update playlist order:', error);
+      // 에러를 다시 throw하지 않고 로그만 남김
+      // UI는 원래 상태를 유지
     }
   },
 

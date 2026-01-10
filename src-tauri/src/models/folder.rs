@@ -5,6 +5,7 @@ pub struct Folder {
     pub id: i64,
     pub path: String,
     pub name: Option<String>,
+    pub order: i64,
     pub added_at: String,
 }
 
@@ -14,7 +15,8 @@ impl Folder {
             id: row.get(0)?,
             path: row.get(1)?,
             name: row.get(2)?,
-            added_at: row.get(3)?,
+            order: row.get(3)?,
+            added_at: row.get(4)?,
         })
     }
 }

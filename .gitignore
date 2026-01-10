@@ -4,7 +4,10 @@ target/
 dist/
 
 # Tauri
-src-tauri/target/
+src-tauri/target
+
+# Database (프로젝트 루트의 data 디렉토리)
+/data//
 src-tauri/Cargo.lock
 
 # IDE

@@ -26,6 +26,7 @@ export interface Folder {
   id: number;
   path: string;
   name: string | null;
+  order: number;
   added_at: string;
 }
 
@@ -37,6 +38,7 @@ export interface Playlist {
   is_dynamic: number; // 0: static, 1: dynamic
   filter_tags: string | null; // JSON array
   filter_mode: string | null; // "AND" or "OR"
+  order: number;
   created_at: string;
   updated_at: string;
 }

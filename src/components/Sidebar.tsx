@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { LayoutDashboard, Plus, Settings, ChevronUp } from "lucide-react";
+import { LayoutDashboard, Plus, Settings } from "lucide-react";
+import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { useFolderStore } from "../stores/folderStore";
 import { usePlaylistStore } from "../stores/playlistStore";
 import { FolderModal } from "./FolderModal";
@@ -12,6 +13,7 @@ export const Sidebar = () => {
     loadFolders,
     addFolder,
     updateFolder,
+    updateFolderOrder,
     removeFolder,
     selectFolder,
   } = useFolderStore();
@@ -22,6 +24,7 @@ export const Sidebar = () => {
     loadPlaylists,
     createPlaylist,
     updatePlaylist,
+    updatePlaylistOrder,
     removePlaylist,
     selectPlaylist,
   } = usePlaylistStore();
@@ -89,6 +92,70 @@ export const Sidebar = () => {
     setIsPlaylistModalOpen(true);
   };
 
+  const handleFolderDragEnd = (result: DropResult) => {
+    if (!result.destination) return;
+    
+    const sourceIndex = result.source.index;
+    const destinationIndex = result.destination.index;
+    
+    if (sourceIndex === destinationIndex) return;
+    
+    // 비동기 작업을 즉시 실행하되, 에러를 완전히 처리
+    (async () => {
+      try {
+        const reorderedFolders = Array.from(folders);
+        const [removed] = reorderedFolders.splice(sourceIndex, 1);
+        reorderedFolders.splice(destinationIndex, 0, removed);
+        
+        const folderIds = reorderedFolders.map((f) => f.id);
+        await updateFolderOrder(folderIds);
+      } catch (error) {
+        console.error("Failed to update folder order:", error);
+        // 에러 발생 시 원래 상태로 복구
+        try {
+          await loadFolders();
+        } catch (loadError) {
+          console.error("Failed to reload folders:", loadError);
+        }
+      }
+    })().catch((error) => {
+      // 최종 에러 처리 - 앱이 재시작되지 않도록
+      console.error("Unhandled error in handleFolderDragEnd:", error);
+    });
+  };
+
+  const handlePlaylistDragEnd = (result: DropResult) => {
+    if (!result.destination) return;
+    
+    const sourceIndex = result.source.index;
+    const destinationIndex = result.destination.index;
+    
+    if (sourceIndex === destinationIndex) return;
+    
+    // 비동기 작업을 즉시 실행하되, 에러를 완전히 처리
+    (async () => {
+      try {
+        const reorderedPlaylists = Array.from(playlists);
+        const [removed] = reorderedPlaylists.splice(sourceIndex, 1);
+        reorderedPlaylists.splice(destinationIndex, 0, removed);
+        
+        const playlistIds = reorderedPlaylists.map((p) => p.id);
+        await updatePlaylistOrder(playlistIds);
+      } catch (error) {
+        console.error("Failed to update playlist order:", error);
+        // 에러 발생 시 원래 상태로 복구
+        try {
+          await loadPlaylists();
+        } catch (loadError) {
+          console.error("Failed to reload playlists:", loadError);
+        }
+      }
+    })().catch((error) => {
+      // 최종 에러 처리 - 앱이 재시작되지 않도록
+      console.error("Unhandled error in handlePlaylistDragEnd:", error);
+    });
+  };
+
   return (
     <div className="w-64 bg-bg-sidebar flex flex-col h-full">
       {/* Dashboard Menu */}
@@ -119,36 +186,54 @@ export const Sidebar = () => {
             <Plus size={14} className="text-text-muted" />
           </button>
         </div>
-        <div className="space-y-1">
-          {folders.map((folder) => (
-            <div
-              key={folder.id}
-              onClick={() => {
-                selectFolder(folder.id);
-                selectPlaylist(null);
-              }}
-              className={`flex items-center justify-between px-3 py-2 rounded cursor-pointer transition-colors group ${
-                selectedFolderId === folder.id
-                  ? "bg-accent text-white"
-                  : "hover:bg-hover text-text-primary"
-              }`}
-            >
-              <span className="flex-1 text-sm font-medium truncate">
-                {folder.name || folder.path}
-              </span>
-              <button
-                onClick={(e) => handleEditFolder(e, folder.id)}
-                className={`ml-2 p-1 rounded transition-opacity ${
-                  selectedFolderId === folder.id
-                    ? "opacity-70 hover:opacity-100"
-                    : "opacity-0 group-hover:opacity-70 hover:opacity-100"
-                }`}
+        <DragDropContext onDragEnd={handleFolderDragEnd}>
+          <Droppable droppableId="folders">
+            {(provided) => (
+              <div
+                {...provided.droppableProps}
+                ref={provided.innerRef}
+                className="space-y-1"
               >
-                <Settings size={14} />
-              </button>
-            </div>
-          ))}
-        </div>
+                {folders.map((folder, index) => (
+                  <Draggable key={folder.id} draggableId={`folder-${folder.id}`} index={index}>
+                    {(provided, snapshot) => (
+                      <div
+                        ref={provided.innerRef}
+                        {...provided.draggableProps}
+                        {...provided.dragHandleProps}
+                        onClick={() => {
+                          selectFolder(folder.id);
+                          selectPlaylist(null);
+                        }}
+                        className={`flex items-center justify-between px-3 py-2 rounded cursor-grab active:cursor-grabbing transition-colors group ${
+                          selectedFolderId === folder.id
+                            ? "bg-accent text-white"
+                            : "hover:bg-hover text-text-primary"
+                        } ${snapshot.isDragging ? "opacity-50" : ""}`}
+                      >
+                        <span className="flex-1 text-sm font-medium truncate">
+                          {folder.name || folder.path}
+                        </span>
+                        <button
+                          onClick={(e) => handleEditFolder(e, folder.id)}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          className={`ml-2 p-1 rounded transition-opacity cursor-pointer ${
+                            selectedFolderId === folder.id
+                              ? "opacity-70 hover:opacity-100"
+                              : "opacity-0 group-hover:opacity-70 hover:opacity-100"
+                          }`}
+                        >
+                          <Settings size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </Draggable>
+                ))}
+                {provided.placeholder}
+              </div>
+            )}
+          </Droppable>
+        </DragDropContext>
       </div>
 
       {/* Playlist Section */}
@@ -165,36 +250,54 @@ export const Sidebar = () => {
             <Plus size={14} className="text-text-muted" />
           </button>
         </div>
-        <div className="space-y-1">
-          {playlists.map((playlist) => (
-            <div
-              key={playlist.id}
-              onClick={() => {
-                selectPlaylist(playlist.id);
-                selectFolder(null);
-              }}
-              className={`flex items-center justify-between px-3 py-2 rounded cursor-pointer transition-colors group ${
-                selectedPlaylistId === playlist.id
-                  ? "bg-accent text-white"
-                  : "hover:bg-hover text-text-primary"
-              }`}
-            >
-              <span className="flex-1 text-sm font-medium truncate">
-                {playlist.name}
-              </span>
-              <button
-                onClick={(e) => handleEditPlaylist(e, playlist.id)}
-                className={`ml-2 p-1 rounded transition-opacity ${
-                  selectedPlaylistId === playlist.id
-                    ? "opacity-70 hover:opacity-100"
-                    : "opacity-0 group-hover:opacity-70 hover:opacity-100"
-                }`}
+        <DragDropContext onDragEnd={handlePlaylistDragEnd}>
+          <Droppable droppableId="playlists">
+            {(provided) => (
+              <div
+                {...provided.droppableProps}
+                ref={provided.innerRef}
+                className="space-y-1"
               >
-                <Settings size={14} />
-              </button>
-            </div>
-          ))}
-        </div>
+                {playlists.map((playlist, index) => (
+                  <Draggable key={playlist.id} draggableId={`playlist-${playlist.id}`} index={index}>
+                    {(provided, snapshot) => (
+                      <div
+                        ref={provided.innerRef}
+                        {...provided.draggableProps}
+                        {...provided.dragHandleProps}
+                        onClick={() => {
+                          selectPlaylist(playlist.id);
+                          selectFolder(null);
+                        }}
+                        className={`flex items-center justify-between px-3 py-2 rounded cursor-grab active:cursor-grabbing transition-colors group ${
+                          selectedPlaylistId === playlist.id
+                            ? "bg-accent text-white"
+                            : "hover:bg-hover text-text-primary"
+                        } ${snapshot.isDragging ? "opacity-50" : ""}`}
+                      >
+                        <span className="flex-1 text-sm font-medium truncate">
+                          {playlist.name}
+                        </span>
+                        <button
+                          onClick={(e) => handleEditPlaylist(e, playlist.id)}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          className={`ml-2 p-1 rounded transition-opacity cursor-pointer ${
+                            selectedPlaylistId === playlist.id
+                              ? "opacity-70 hover:opacity-100"
+                              : "opacity-0 group-hover:opacity-70 hover:opacity-100"
+                          }`}
+                        >
+                          <Settings size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </Draggable>
+                ))}
+                {provided.placeholder}
+              </div>
+            )}
+          </Droppable>
+        </DragDropContext>
       </div>
 
       {/* Modals */}
