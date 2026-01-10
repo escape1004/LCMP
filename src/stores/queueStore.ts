@@ -1,10 +1,12 @@
 import { create } from 'zustand';
 import { Song } from '../types';
+import { usePlayerStore } from './playerStore';
 
 interface QueueStore {
   queue: Song[];
   currentIndex: number | null;
   isOpen: boolean;
+  originalQueue: Song[]; // 셔플 전 원본 대기열
   addToQueue: (song: Song, position?: number) => void;
   removeFromQueue: (index: number) => void;
   reorderQueue: (from: number, to: number) => void;
@@ -12,12 +14,19 @@ interface QueueStore {
   setCurrentIndex: (index: number | null) => void;
   toggleQueue: () => void;
   setQueueOpen: (open: boolean) => void;
+  shuffleQueue: () => void;
+  unshuffleQueue: () => void;
+  playSong: (song: Song) => Promise<void>;
+  playSongAtIndex: (index: number) => Promise<void>;
+  playNext: () => Promise<void>;
+  playPrevious: () => Promise<void>;
 }
 
-export const useQueueStore = create<QueueStore>((set) => ({
+export const useQueueStore = create<QueueStore>((set, get) => ({
   queue: [],
   currentIndex: null,
   isOpen: false,
+  originalQueue: [],
 
   addToQueue: (song: Song, position?: number) => {
     set((state) => {
@@ -80,5 +89,121 @@ export const useQueueStore = create<QueueStore>((set) => ({
 
   setQueueOpen: (open: boolean) => {
     set({ isOpen: open });
+  },
+
+  shuffleQueue: () => {
+    const state = get();
+    if (state.queue.length === 0) return;
+    
+    // 원본 대기열 저장 (처음 셔플할 때만)
+    if (state.originalQueue.length === 0) {
+      set({ originalQueue: [...state.queue] });
+    }
+    
+    // 현재 재생 중인 곡을 제외한 나머지를 섞기
+    const currentSong = state.currentIndex !== null ? state.queue[state.currentIndex] : null;
+    const otherSongs = state.queue.filter((_, i) => i !== state.currentIndex);
+    
+    // Fisher-Yates 셔플 알고리즘
+    for (let i = otherSongs.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [otherSongs[i], otherSongs[j]] = [otherSongs[j], otherSongs[i]];
+    }
+    
+    // 현재 곡을 맨 앞에 두고 나머지를 뒤에 배치
+    const shuffledQueue = currentSong ? [currentSong, ...otherSongs] : otherSongs;
+    const newCurrentIndex = currentSong ? 0 : null;
+    
+    set({ queue: shuffledQueue, currentIndex: newCurrentIndex });
+  },
+
+  unshuffleQueue: () => {
+    const state = get();
+    if (state.originalQueue.length === 0) return;
+    
+    // 원본 대기열로 복원
+    const originalIndex = state.currentIndex !== null && state.currentIndex < state.originalQueue.length
+      ? state.queue[state.currentIndex]
+        ? state.originalQueue.findIndex(s => s.id === state.queue[state.currentIndex].id)
+        : null
+      : null;
+    
+    set({ 
+      queue: [...state.originalQueue], 
+      currentIndex: originalIndex,
+      originalQueue: [] 
+    });
+  },
+
+  playSong: async (song: Song) => {
+    try {
+      const state = get();
+      let songIndex = state.queue.findIndex(s => s.id === song.id);
+      
+      // 대기열에 없으면 추가
+      if (songIndex === -1) {
+        set((state) => {
+          const newQueue = [...state.queue, song];
+          return { queue: newQueue, currentIndex: newQueue.length - 1 };
+        });
+        songIndex = get().queue.length - 1;
+      } else {
+        set({ currentIndex: songIndex });
+      }
+
+      // 오디오 초기화 및 재생
+      const { initializeAudio, play } = usePlayerStore.getState();
+      await initializeAudio(song);
+      await play();
+    } catch (error) {
+      console.error('Error in playSong:', error);
+      throw error;
+    }
+  },
+
+  playSongAtIndex: async (index: number) => {
+    const state = get();
+    if (index >= 0 && index < state.queue.length) {
+      const song = state.queue[index];
+      set({ currentIndex: index });
+      
+      const { initializeAudio, play } = usePlayerStore.getState();
+      await initializeAudio(song);
+      await play();
+    }
+  },
+
+  playNext: async () => {
+    const state = get();
+    const { repeat } = usePlayerStore.getState();
+    
+    if (state.currentIndex === null) return;
+    
+    // 1곡 반복 모드에서도 버튼을 누르면 다음 곡으로 이동
+    if (state.currentIndex < state.queue.length - 1) {
+      // 다음 곡 재생
+      const nextIndex = state.currentIndex + 1;
+      await get().playSongAtIndex(nextIndex);
+    } else if (repeat === 'all') {
+      // 전체 반복: 처음부터 다시
+      await get().playSongAtIndex(0);
+    }
+    // 1곡 반복 모드이고 마지막 곡이면 아무것도 하지 않음 (버튼이 비활성화됨)
+  },
+
+  playPrevious: async () => {
+    const state = get();
+    const { repeat } = usePlayerStore.getState();
+    
+    if (state.currentIndex === null) return;
+    
+    if (state.currentIndex > 0) {
+      // 이전 곡 재생
+      const prevIndex = state.currentIndex - 1;
+      await get().playSongAtIndex(prevIndex);
+    } else if (repeat === 'all') {
+      // 전체 반복 모드: 마지막 곡으로 이동
+      await get().playSongAtIndex(state.queue.length - 1);
+    }
   },
 }));

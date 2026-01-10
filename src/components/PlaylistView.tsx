@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useFolderStore } from '../stores/folderStore';
 import { usePlaylistStore } from '../stores/playlistStore';
 import { useSongStore } from '../stores/songStore';
+import { useQueueStore } from '../stores/queueStore';
 import { Song } from '../types';
 
 const formatDuration = (seconds: number | null): string => {
@@ -15,6 +16,15 @@ export const PlaylistView = () => {
   const { selectedFolderId } = useFolderStore();
   const { selectedPlaylistId } = usePlaylistStore();
   const { songs, isLoading, loadSongsByFolder, loadSongsByPlaylist, clearSongs } = useSongStore();
+  const { playSong } = useQueueStore();
+
+  const handleSongClick = async (song: Song) => {
+    try {
+      await playSong(song);
+    } catch (error) {
+      console.error('Failed to play song:', error);
+    }
+  };
 
   useEffect(() => {
     if (selectedFolderId !== null) {
@@ -72,6 +82,7 @@ export const PlaylistView = () => {
                 <tr
                   key={song.id}
                   className="border-b border-border hover:bg-hover transition-colors cursor-pointer"
+                  onClick={() => handleSongClick(song)}
                 >
                   <td className="px-4 py-3 text-sm text-text-primary">
                     {song.title || '제목 없음'}

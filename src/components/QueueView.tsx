@@ -2,9 +2,13 @@ import { useQueueStore } from "../stores/queueStore";
 import { Song } from "../types";
 
 export const QueueView = () => {
-  const { queue, currentIndex } = useQueueStore();
+  const { queue, currentIndex, playSongAtIndex } = useQueueStore();
 
   const currentSong = currentIndex !== null ? queue[currentIndex] : null;
+
+  const handleSongClick = async (index: number) => {
+    await playSongAtIndex(index);
+  };
 
   return (
     <div className="h-full w-full flex overflow-hidden bg-bg-primary">
@@ -43,6 +47,7 @@ export const QueueView = () => {
                       ? "bg-accent/20 text-text-primary"
                       : "hover:bg-hover text-text-primary"
                   }`}
+                  onClick={() => handleSongClick(index)}
                 >
                   {/* 앨범 아트 썸네일 */}
                   <div className="w-12 h-12 bg-hover rounded flex items-center justify-center flex-shrink-0">

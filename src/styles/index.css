@@ -54,4 +54,36 @@
     scrollbar-width: thin;
     scrollbar-color: #202225 transparent;
   }
+
+  /* Marquee animation for long titles */
+  .marquee-container {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .marquee-content {
+    display: inline-flex;
+    animation: marquee 20s linear infinite;
+  }
+
+  .marquee-content:hover {
+    animation-play-state: paused;
+  }
+
+  .marquee-text {
+    display: inline-block;
+    padding-right: 3rem;
+    flex-shrink: 0;
+  }
+
+  @keyframes marquee {
+    0% {
+      transform: translateX(0);
+    }
+    100% {
+      transform: translateX(-50%);
+    }
+  }
 }
