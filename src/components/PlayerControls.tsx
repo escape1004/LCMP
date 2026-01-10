@@ -8,9 +8,15 @@ export const PlayerControls = () => {
   return (
     <div className="bg-bg-sidebar border-t border-border">
       {/* 플레이어 컨트롤 */}
-      <div className="h-24 px-4 py-2 flex items-center gap-4">
+      <div 
+        className="h-24 px-4 py-2 flex items-center gap-4"
+        onClick={toggleQueue}
+      >
         {/* Album Art & Song Info */}
-        <div className="flex items-center gap-3 min-w-[200px]">
+        <div 
+          className="flex items-center gap-3 min-w-[200px]"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="w-14 h-14 bg-hover rounded flex items-center justify-center">
             <span className="text-text-muted text-xs">앨범</span>
           </div>
@@ -26,23 +32,35 @@ export const PlayerControls = () => {
 
         {/* Playback Controls */}
         <div className="flex-1 flex items-center justify-center gap-2">
-          <button className="p-2 hover:bg-hover rounded transition-colors">
+          <button 
+            className="p-2 hover:bg-hover rounded transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
             <SkipBack size={20} className="text-text-primary" />
           </button>
-          <button className="p-2 hover:bg-hover rounded transition-colors">
+          <button 
+            className="p-2 hover:bg-hover rounded transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
             {isPlaying ? (
               <Pause size={24} className="text-text-primary" />
             ) : (
               <Play size={24} className="text-text-primary" />
             )}
           </button>
-          <button className="p-2 hover:bg-hover rounded transition-colors">
+          <button 
+            className="p-2 hover:bg-hover rounded transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
             <SkipForward size={20} className="text-text-primary" />
           </button>
         </div>
 
         {/* Volume Control */}
-        <div className="flex items-center gap-2 min-w-[120px]">
+        <div 
+          className="flex items-center gap-2 min-w-[120px]"
+          onClick={(e) => e.stopPropagation()}
+        >
           <Volume2 size={18} className="text-text-muted" />
           <div className="flex-1 h-1 bg-hover rounded-full">
             <div className="h-full bg-accent rounded-full" style={{ width: "50%" }}></div>
@@ -51,15 +69,16 @@ export const PlayerControls = () => {
 
         {/* Queue Toggle Button */}
         <button
-          onClick={toggleQueue}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleQueue();
+          }}
           className="p-2 hover:bg-hover rounded transition-colors"
           title={isOpen ? "대기열 숨기기" : "대기열 보기"}
         >
-          {isOpen ? (
-            <ChevronDown size={20} className="text-text-primary" />
-          ) : (
+          <div className={`transition-transform duration-300 ${isOpen ? 'rotate-180' : 'rotate-0'}`}>
             <ChevronUp size={20} className="text-text-primary" />
-          )}
+          </div>
         </button>
       </div>
     </div>

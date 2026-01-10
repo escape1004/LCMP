@@ -7,9 +7,9 @@ export const QueueView = () => {
   const currentSong = currentIndex !== null ? queue[currentIndex] : null;
 
   return (
-    <div className="flex-1 flex overflow-hidden bg-bg-primary">
+    <div className="h-full w-full flex overflow-hidden bg-bg-primary">
       {/* 좌측: 앨범 커버/동영상 */}
-      <div className="flex-1 flex items-center justify-center bg-bg-primary">
+      <div className="flex-1 flex items-center justify-center bg-bg-primary h-full">
         {currentSong?.album_art_path ? (
           <img
             src={currentSong.album_art_path}
@@ -24,13 +24,15 @@ export const QueueView = () => {
       </div>
 
       {/* 우측: 재생 대기열 목록 */}
-      <div className="w-80 border-l border-border overflow-y-auto bg-bg-primary">
-        <div className="p-4">
+      <div className="w-80 border-l border-border overflow-y-auto bg-bg-primary h-full flex flex-col">
+        <div className="p-4 flex-1 flex flex-col">
           {/* 대기열 목록 */}
-          <div className="space-y-1">
+          <div className="space-y-1 flex-1 flex flex-col">
             {queue.length === 0 ? (
-              <div className="text-text-muted text-sm py-8 text-center">
-                대기열이 비어있습니다
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-text-muted text-sm text-center">
+                  대기열이 비어있습니다
+                </div>
               </div>
             ) : (
               queue.map((song, index) => (

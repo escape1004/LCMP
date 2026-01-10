@@ -15,8 +15,15 @@ function App() {
         <Sidebar />
 
         {/* Main Content */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {isOpen ? <QueueView /> : <PlaylistView />}
+        <div className="flex-1 flex flex-col overflow-hidden relative">
+          <PlaylistView />
+          <div 
+            className={`absolute inset-0 bg-bg-primary transform transition-transform duration-300 ease-in-out z-10 ${
+              isOpen ? 'translate-y-0' : 'translate-y-full'
+            }`}
+          >
+            <QueueView />
+          </div>
         </div>
       </div>
 
