@@ -41,6 +41,10 @@
 
 - **Node.js** 18+ 및 npm
 - **Rust** (최신 안정 버전)
+  - **Windows 필수**: Visual Studio Build Tools 또는 Visual Studio 2017+ (C++ 빌드 도구 포함) **반드시 설치 필요**
+    - 다운로드: https://visualstudio.microsoft.com/downloads/
+    - "Build Tools for Visual Studio 2022" 선택
+    - 설치 시 "C++ 빌드 도구" 워크로드 선택
 - **시스템 WebView** (Windows: Edge WebView2, macOS: WebKit, Linux: WebKitGTK)
 
 ### 설치 방법
@@ -57,7 +61,12 @@ npm create tauri-app@latest .
 npm install
 
 # 개발 서버 실행
-npm run tauri dev
+# Windows에서는 Visual Studio 환경 변수가 필요하므로 배치 파일 사용 (권장)
+.\run-tauri-dev.bat
+
+# 또는 직접 실행 (PowerShell)
+$vcvarsPath = "C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Auxiliary\Build\vcvars64.bat"
+cmd /c "call `"$vcvarsPath`" && set PATH=%PATH%;%USERPROFILE%\.cargo\bin && npm run tauri dev"
 ```
 
 ## 프로젝트 구조

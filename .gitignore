@@ -14,7 +14,7 @@ src-tauri/Cargo.lock
 *.swo
 *~
 
-# Data (媛쒕컻???곗씠?곕뒗 ?쒖쇅, ?꾨줈?뺤뀡 ?곗씠?곕뒗 ?ы븿)
+# Data (개발용 데이터는 제외, 프로덕션 데이터는 포함)
 data/database.db
 data/config.json
 data/album_arts/
@@ -40,3 +40,6 @@ yarn-error.log*
 
 # Reference projects (not part of this codebase)
 electron-reference/
+
+# Rust
+rustup-init.exe

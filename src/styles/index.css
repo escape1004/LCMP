@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-bg-primary text-text-primary font-noto;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  html {
+    height: 100%;
+  }
+
+  #root {
+    height: 100vh;
+    width: 100vw;
+  }
+
+  /* 전역 포커스 테두리 숨기기 */
+  *:focus {
+    outline: none !important;
+  }
+
+  /* 접근성을 위한 커스텀 포커스 스타일 */
+  *:focus-visible {
+    outline: 2px solid #5865f2 !important;
+    outline-offset: 2px !important;
+  }
+
+  /* Global scrollbar style */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: #202225;
+    border-radius: 4px;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: #36393f;
+  }
+
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #202225 transparent;
+  }
+}
