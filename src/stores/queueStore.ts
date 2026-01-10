@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Song } from '../types';
 import { usePlayerStore } from './playerStore';
+import { invoke } from '@tauri-apps/api/tauri';
 
 interface QueueStore {
   queue: Song[];
@@ -20,6 +21,7 @@ interface QueueStore {
   playSongAtIndex: (index: number) => Promise<void>;
   playNext: () => Promise<void>;
   playPrevious: () => Promise<void>;
+  preloadWaveforms: (queue: Song[]) => Promise<void>; // 백그라운드 웨이폼 추출
 }
 
 export const useQueueStore = create<QueueStore>((set, get) => ({
@@ -29,15 +31,45 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   originalQueue: [],
 
   addToQueue: (song: Song, position?: number) => {
-    set((state) => {
-      const newQueue = [...state.queue];
-      if (position !== undefined) {
-        newQueue.splice(position, 0, song);
-      } else {
-        newQueue.push(song);
-      }
-      return { queue: newQueue };
+    const state = get();
+    const newQueue = [...state.queue];
+    if (position !== undefined) {
+      newQueue.splice(position, 0, song);
+    } else {
+      newQueue.push(song);
+    }
+    
+    set({ queue: newQueue });
+    
+    // 백그라운드에서 웨이폼 미리 추출 (순차적으로)
+    // 새로 추가된 곡부터 시작하여 대기열의 곡들을 순차적으로 처리
+    get().preloadWaveforms(newQueue).catch(err => {
+      console.error('Failed to preload waveforms:', err);
     });
+  },
+  
+  // 대기열의 곡들을 백그라운드에서 순차적으로 웨이폼 추출
+  preloadWaveforms: async (queue: Song[]) => {
+    // 현재 재생 중인 곡의 다음 곡부터 시작
+    const { currentIndex } = get();
+    const startIndex = currentIndex !== null ? currentIndex + 1 : 0;
+    
+    // 순차적으로 웨이폼 추출 (한 번에 하나씩)
+    for (let i = startIndex; i < queue.length; i++) {
+      const song = queue[i];
+      if (!song) continue;
+      
+      try {
+        // 웨이폼 추출 (캐시에 저장됨)
+        await invoke<number[]>('extract_waveform', {
+          filePath: song.file_path,
+          samples: 150
+        });
+      } catch (error) {
+        // 오류는 무시하고 계속 (백그라운드 작업이므로)
+        console.error(`Failed to preload waveform for ${song.file_path}:`, error);
+      }
+    }
   },
 
   removeFromQueue: (index: number) => {
@@ -166,6 +198,12 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (index >= 0 && index < state.queue.length) {
       const song = state.queue[index];
       set({ currentIndex: index });
+      
+      // 다음 곡들의 웨이폼 미리 추출 (백그라운드)
+      const { preloadWaveforms } = get();
+      preloadWaveforms(state.queue).catch(err => {
+        console.error('Failed to preload waveforms:', err);
+      });
       
       const { initializeAudio, play } = usePlayerStore.getState();
       await initializeAudio(song);
