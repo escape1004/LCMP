@@ -10,7 +10,7 @@ use commands::{
     get_folders, add_folder, update_folder, update_folder_order, remove_folder,
     get_playlists, create_playlist, update_playlist, update_playlist_order, remove_playlist,
     get_songs_by_folder, get_songs_by_playlist, get_all_songs,
-    get_audio_duration,
+    get_audio_duration, get_file_sizes,
 };
 
 fn main() {
@@ -42,6 +42,7 @@ fn main() {
             get_songs_by_playlist,
             get_all_songs,
             get_audio_duration,
+            get_file_sizes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

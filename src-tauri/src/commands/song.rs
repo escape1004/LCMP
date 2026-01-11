@@ -4,6 +4,7 @@ use crate::commands::folder::scan_folder_for_songs;
 use rusqlite::Result;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::fs;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SongList {
@@ -104,3 +105,21 @@ pub async fn get_all_songs() -> Result<SongList, String> {
     Ok(SongList { songs })
 }
 
+#[tauri::command]
+pub async fn get_file_sizes(file_paths: Vec<String>) -> Result<Vec<(String, u64)>, String> {
+    let mut results = Vec::new();
+    
+    for file_path in file_paths {
+        match fs::metadata(&file_path) {
+            Ok(metadata) => {
+                results.push((file_path, metadata.len()));
+            }
+            Err(_) => {
+                // 파일이 없거나 접근할 수 없으면 0으로 설정
+                results.push((file_path, 0));
+            }
+        }
+    }
+    
+    Ok(results)
+}
