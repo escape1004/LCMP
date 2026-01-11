@@ -7,7 +7,7 @@ interface FolderStore {
   selectedFolderId: number | null;
   isLoading: boolean;
   loadFolders: () => Promise<void>;
-  addFolder: (path: string, name?: string) => Promise<void>;
+  addFolder: (path: string, name?: string) => Promise<Folder>;
   updateFolder: (folderId: number, name: string) => Promise<void>;
   updateFolderOrder: (folderIds: number[]) => Promise<void>;
   removeFolder: (folderId: number) => Promise<void>;
@@ -35,7 +35,9 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
       const folder = await invoke<Folder>('add_folder', { path, name });
       set((state) => ({
         folders: [...state.folders, folder],
+        selectedFolderId: folder.id, // 새로 추가된 폴더를 자동으로 선택
       }));
+      return folder; // 추가된 폴더 반환
     } catch (error) {
       console.error('Failed to add folder:', error);
       throw error;

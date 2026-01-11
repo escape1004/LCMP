@@ -153,7 +153,6 @@ export const useSongStore = create<SongStore>((set, get) => ({
           }
         }
       }
-      }
       
       set({ generatingWaveformSongId: songId });
     } catch (error) {

@@ -44,8 +44,9 @@ pub(crate) fn generate_waveforms_for_songs_without_waveform(conn: &rusqlite::Con
     }
     
     // 웨이폼이 없는 노래들 찾기 (한 번에 1개씩만 처리하여 메모리 사용량 최소화)
+    // 제목 순서로 처리하여 사용자가 보는 순서와 일치시킴
     let mut stmt = match conn.prepare(
-        "SELECT id, file_path FROM songs WHERE waveform_data IS NULL OR waveform_data = '' LIMIT 1"
+        "SELECT id, file_path FROM songs WHERE waveform_data IS NULL OR waveform_data = '' ORDER BY title ASC LIMIT 1"
     ) {
         Ok(stmt) => stmt,
         Err(_) => return,
