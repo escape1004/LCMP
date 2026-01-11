@@ -83,8 +83,124 @@ pub async fn get_audio_duration(file_path: String) -> Result<f64, String> {
 }
 
 #[tauri::command]
+pub async fn extract_waveform(file_path: String, samples: usize) -> Result<Vec<f32>, String> {
+    // 오디오 파일 열기
+    let file = File::open(&file_path)
+        .map_err(|e| format!("Failed to open file: {}", e))?;
+    
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut hint = Hint::new();
+    if let Some(extension) = std::path::Path::new(&file_path).extension() {
+        if let Some(ext_str) = extension.to_str() {
+            hint.with_extension(ext_str);
+        }
+    }
+    
+    let meta_opts: MetadataOptions = Default::default();
+    let fmt_opts: FormatOptions = Default::default();
+    
+    let probe = get_probe();
+    let mut probed = probe.format(&hint, mss, &fmt_opts, &meta_opts)
+        .map_err(|e| format!("Failed to probe format: {}", e))?;
+    
+    // 오디오 트랙 찾기
+    let track = probed.format.tracks()
+        .iter()
+        .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+        .ok_or_else(|| "No valid audio track found".to_string())?;
+    
+    // 디코더 생성
+    let mut decoder = symphonia::default::get_codecs()
+        .make(&track.codec_params, &DecoderOptions::default())
+        .map_err(|e| format!("Failed to create decoder: {}", e))?;
+    
+    // 전체 오디오 데이터 수집
+    let mut all_samples = Vec::new();
+    
+    loop {
+        let packet = match probed.format.next_packet() {
+            Ok(packet) => packet,
+            Err(symphonia::core::errors::Error::ResetRequired) => {
+                decoder.reset();
+                continue;
+            }
+            Err(_) => {
+                break; // 파일 끝
+            }
+        };
+        
+        if let Ok(decoded) = decoder.decode(&packet) {
+            let audio_buf = decoded;
+            let frames = audio_buf.frames();
+            let channels_count = audio_buf.spec().channels.count() as usize;
+            
+            // f32 버퍼로 변환
+            let duration = symphonia::core::units::Duration::from(frames as u64);
+            let mut f32_buf = symphonia::core::audio::AudioBuffer::<f32>::new(duration, *audio_buf.spec());
+            audio_buf.convert(&mut f32_buf);
+            
+            // 모든 채널의 평균을 계산하여 모노로 변환
+            for frame_idx in 0..frames {
+                let mut sum = 0.0;
+                for ch in 0..channels_count {
+                    sum += f32_buf.chan(ch)[frame_idx];
+                }
+                let avg = sum / channels_count as f32;
+                all_samples.push(avg);
+            }
+        }
+    }
+    
+    if all_samples.is_empty() {
+        return Err("No audio data found".to_string());
+    }
+    
+    // 웨이폼 데이터 생성: RMS 값 계산
+    let total_frames = all_samples.len();
+    let chunk_size = (total_frames as f64 / samples as f64).ceil() as usize;
+    
+    let mut waveform = Vec::with_capacity(samples);
+    
+    for i in 0..samples {
+        let start = i * chunk_size;
+        let end = ((i + 1) * chunk_size).min(total_frames);
+        
+        if start >= total_frames {
+            waveform.push(0.0);
+            continue;
+        }
+        
+        // RMS (Root Mean Square) 계산
+        let mut sum_squares = 0.0;
+        let count = end - start;
+        
+        for j in start..end {
+            let sample = all_samples[j];
+            sum_squares += sample * sample;
+        }
+        
+        let rms = (sum_squares / count as f32).sqrt();
+        waveform.push(rms);
+    }
+    
+    // 정규화 (0.0 ~ 1.0)
+    let max = waveform.iter().copied().fold(0.0f32, f32::max);
+    if max > 0.0 {
+        for value in waveform.iter_mut() {
+            *value /= max;
+        }
+    }
+    
+    Ok(waveform)
+}
+
+#[tauri::command]
 pub async fn play_audio(file_path: String, volume: f32, seek_time: Option<f64>) -> Result<(), String> {
+    // 기존 재생 중지
     stop_audio().await.ok();
+    
+    // 기존 스레드가 완전히 종료될 때까지 잠시 대기
+    thread::sleep(Duration::from_millis(100));
     
     let state = Arc::new(Mutex::new(PlayerState {
         is_playing: true,
@@ -148,12 +264,23 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
     
     // Seek 처리
     if let Some(seek_time) = state.lock().unwrap().seek_time {
-        if let Some(time_base) = track.codec_params.time_base {
-            let seek_ts = (seek_time * time_base.denom as f64 / time_base.numer as f64) as u64;
-            probed.format.seek(symphonia::core::formats::SeekMode::Accurate, symphonia::core::formats::SeekTo::Time { 
+        // seek_time은 초 단위
+        let seek_seconds = seek_time as u64;
+        let seek_frac = seek_time - seek_seconds as f64;
+        
+        let seek_result = probed.format.seek(
+            symphonia::core::formats::SeekMode::Accurate,
+            symphonia::core::formats::SeekTo::Time {
                 track_id: Some(track.id),
-                time: symphonia::core::units::Time::new(seek_ts, 0.0)
-            }).ok();
+                time: symphonia::core::units::Time::new(seek_seconds, seek_frac),
+            }
+        );
+        
+        if seek_result.is_ok() {
+            // Seek 성공 시 디코더 리셋
+            decoder.reset();
+        } else {
+            eprintln!("Seek failed, continuing from start");
         }
     }
     
@@ -410,7 +537,9 @@ where
                 thread::sleep(Duration::from_millis(5)); // 짧게 대기
             }
             Err(mpsc::TryRecvError::Disconnected) => {
-                return Err("Channel disconnected during preload".to_string());
+                // 채널이 닫혔으면 프리로딩 중단하고 빈 버퍼로 시작
+                // 디코딩 스레드가 곧 데이터를 보낼 것이므로 괜찮음
+                break;
             }
         }
     }

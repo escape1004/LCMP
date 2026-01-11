@@ -12,6 +12,7 @@ use commands::{
     get_songs_by_folder, get_songs_by_playlist, get_all_songs,
     get_audio_duration, get_file_sizes,
     play_audio, pause_audio, resume_audio, stop_audio, seek_audio, set_volume,
+    extract_waveform,
 };
 
 fn main() {
@@ -50,6 +51,7 @@ fn main() {
             stop_audio,
             seek_audio,
             set_volume,
+            extract_waveform,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
