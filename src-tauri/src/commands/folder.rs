@@ -122,6 +122,9 @@ pub(crate) fn scan_folder_for_songs(conn: &rusqlite::Connection, folder_path: &s
         }
     }
     
+    // 스캔 완료 후 웨이폼이 없는 노래들에 대해 백그라운드에서 웨이폼 생성
+    crate::commands::song::generate_waveforms_for_songs_without_waveform(conn);
+    
     Ok(())
 }
 
@@ -175,6 +178,26 @@ pub async fn update_folder_order(folder_ids: Vec<i64>) -> Result<(), String> {
 pub async fn remove_folder(folder_id: i64) -> Result<(), String> {
     let conn = get_connection().map_err(|e| e.to_string())?;
     
+    // 폴더 경로 가져오기
+    let folder_path: String = conn
+        .query_row(
+            "SELECT path FROM folders WHERE id = ?1",
+            [folder_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("폴더를 찾을 수 없습니다: {}", e))?;
+    
+    // 폴더 경로 정규화 (Windows 경로 처리)
+    let normalized_path = folder_path.replace("\\", "/");
+    
+    // 해당 폴더 경로로 시작하는 모든 노래 삭제
+    conn.execute(
+        "DELETE FROM songs WHERE REPLACE(file_path, '\\', '/') LIKE ?1 || '%'",
+        [&format!("{}%", normalized_path)],
+    )
+    .map_err(|e| format!("노래 삭제 실패: {}", e))?;
+    
+    // 폴더 삭제
     conn.execute("DELETE FROM folders WHERE id = ?1", params![folder_id])
         .map_err(|e| e.to_string())?;
     

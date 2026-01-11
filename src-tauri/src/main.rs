@@ -9,8 +9,8 @@ use database::{get_connection, run_migrations};
 use commands::{
     get_folders, add_folder, update_folder, update_folder_order, remove_folder,
     get_playlists, create_playlist, update_playlist, update_playlist_order, remove_playlist,
-    get_songs_by_folder, get_songs_by_playlist, get_all_songs,
-    get_audio_duration, get_file_sizes,
+    get_songs_by_folder, get_songs_by_playlist, get_all_songs, get_song_by_id,
+    get_audio_duration, get_file_sizes, get_current_generating_waveform_song_id,
     play_audio, pause_audio, resume_audio, stop_audio, seek_audio, set_volume,
     extract_waveform,
 };
@@ -43,8 +43,10 @@ fn main() {
             get_songs_by_folder,
             get_songs_by_playlist,
             get_all_songs,
+            get_song_by_id,
             get_audio_duration,
             get_file_sizes,
+            get_current_generating_waveform_song_id,
             play_audio,
             pause_audio,
             resume_audio,

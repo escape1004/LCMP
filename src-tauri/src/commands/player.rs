@@ -109,13 +109,39 @@ pub async fn extract_waveform(file_path: String, samples: usize) -> Result<Vec<f
         .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
         .ok_or_else(|| "No valid audio track found".to_string())?;
     
+    // 전체 길이 계산 (파일을 다시 열지 않고 현재 probed format에서 가져오기)
+    let sample_rate = track.codec_params.sample_rate.unwrap_or(44100) as usize;
+    let duration_sec = if let Some(time_base) = track.codec_params.time_base {
+        if let Some(frames) = track.codec_params.n_frames {
+            let time = time_base.calc_time(frames);
+            time.seconds as f64 + time.frac as f64
+        } else {
+            // n_frames가 없으면 스트리밍으로 처리하면서 동적 계산
+            0.0
+        }
+    } else {
+        0.0
+    };
+    
+    // 청크 크기 계산
+    let chunk_size = if duration_sec > 0.0 {
+        let estimated_total_samples = (duration_sec * sample_rate as f64) as usize;
+        (estimated_total_samples as f64 / samples as f64).ceil() as usize
+    } else {
+        // duration을 모를 경우 기본값 사용 (동적 조정)
+        1024
+    };
+    
     // 디코더 생성
     let mut decoder = symphonia::default::get_codecs()
         .make(&track.codec_params, &DecoderOptions::default())
         .map_err(|e| format!("Failed to create decoder: {}", e))?;
     
-    // 전체 오디오 데이터 수집
-    let mut all_samples = Vec::new();
+    // 스트리밍 방식으로 웨이폼 추출 (메모리 효율적)
+    // 각 웨이폼 청크에 대한 RMS 값을 누적 계산
+    let mut waveform_chunks: Vec<(f32, usize)> = vec![(0.0, 0); samples]; // (sum_squares, count)
+    let mut sample_counter = 0usize;
+    let mut dynamic_chunk_size = chunk_size;
     
     loop {
         let packet = match probed.format.next_packet() {
@@ -135,52 +161,56 @@ pub async fn extract_waveform(file_path: String, samples: usize) -> Result<Vec<f
             let channels_count = audio_buf.spec().channels.count() as usize;
             
             // f32 버퍼로 변환
-            let duration = symphonia::core::units::Duration::from(frames as u64);
-            let mut f32_buf = symphonia::core::audio::AudioBuffer::<f32>::new(duration, *audio_buf.spec());
+            // AudioBuffer를 충분히 크게 생성 (에러 방지를 위해 실제 프레임 수의 2배)
+            let safe_frames = (frames * 2).max(4096); // 최소 4096 프레임 보장
+            let duration = symphonia::core::units::Duration::from(safe_frames as u64);
+            let mut f32_buf = symphonia::core::audio::AudioBuffer::<f32>::new(
+                duration,
+                *audio_buf.spec()
+            );
             audio_buf.convert(&mut f32_buf);
             
-            // 모든 채널의 평균을 계산하여 모노로 변환
+            // duration을 모를 경우 동적으로 청크 크기 조정
+            if duration_sec == 0.0 && sample_counter > 0 && sample_counter % 10000 == 0 {
+                // 샘플 수를 기반으로 청크 크기 재계산
+                dynamic_chunk_size = (sample_counter / samples).max(1);
+            }
+            
+            // 모든 채널의 평균을 계산하여 모노로 변환하면서 RMS 누적
             for frame_idx in 0..frames {
+                // 모노 변환
                 let mut sum = 0.0;
                 for ch in 0..channels_count {
                     sum += f32_buf.chan(ch)[frame_idx];
                 }
-                let avg = sum / channels_count as f32;
-                all_samples.push(avg);
+                let mono_sample = sum / channels_count as f32;
+                
+                // 현재 샘플이 속할 웨이폼 청크 인덱스 계산
+                let chunk_idx = (sample_counter / dynamic_chunk_size).min(samples - 1);
+                
+                // RMS 누적 (sum_squares)
+                waveform_chunks[chunk_idx].0 += mono_sample * mono_sample;
+                waveform_chunks[chunk_idx].1 += 1;
+                
+                sample_counter += 1;
             }
         }
     }
     
-    if all_samples.is_empty() {
+    if sample_counter == 0 {
         return Err("No audio data found".to_string());
     }
     
-    // 웨이폼 데이터 생성: RMS 값 계산
-    let total_frames = all_samples.len();
-    let chunk_size = (total_frames as f64 / samples as f64).ceil() as usize;
-    
+    // 누적된 데이터를 기반으로 RMS 계산
     let mut waveform = Vec::with_capacity(samples);
-    
     for i in 0..samples {
-        let start = i * chunk_size;
-        let end = ((i + 1) * chunk_size).min(total_frames);
-        
-        if start >= total_frames {
+        let (sum_squares, count) = waveform_chunks[i];
+        if count > 0 {
+            let rms = (sum_squares / count as f32).sqrt();
+            waveform.push(rms);
+        } else {
             waveform.push(0.0);
-            continue;
         }
-        
-        // RMS (Root Mean Square) 계산
-        let mut sum_squares = 0.0;
-        let count = end - start;
-        
-        for j in start..end {
-            let sample = all_samples[j];
-            sum_squares += sample * sample;
-        }
-        
-        let rms = (sum_squares / count as f32).sqrt();
-        waveform.push(rms);
     }
     
     // 정규화 (0.0 ~ 1.0)
@@ -257,10 +287,18 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
     let device = host.default_output_device()
         .ok_or_else(|| "No output device available".to_string())?;
     
-    let config = device.default_output_config()
+    let default_config = device.default_output_config()
         .map_err(|e| format!("Failed to get default output config: {}", e))?;
     
-    let target_sample_rate = config.sample_rate().0 as u32;
+    let target_sample_rate = default_config.sample_rate().0 as u32;
+    
+    // 스테레오 출력을 보장하기 위해 채널 수를 명시적으로 설정
+    let channels = default_config.channels().max(2); // 최소 2채널 (스테레오)
+    let mut config = default_config.config();
+    config.channels = channels; // 스테레오 보장
+    
+    // 디버깅: 채널 수 확인
+    eprintln!("Output channels: {}, Sample rate: {}", config.channels, config.sample_rate.0);
     
     // Seek 처리
     if let Some(seek_time) = state.lock().unwrap().seek_time {
@@ -343,9 +381,13 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                     let frames = audio_buf.frames();
                     let channels_count = audio_buf.spec().channels.count() as usize;
                     
-                    // f32 버퍼로 변환
+                    // f32 버퍼로 변환 (재생용 - 원음 그대로 유지)
+                    // 원래 방식 사용: Duration은 프레임 수를 직접 받음
                     let duration = symphonia::core::units::Duration::from(frames as u64);
-                    let mut f32_buf = symphonia::core::audio::AudioBuffer::<f32>::new(duration, *audio_buf.spec());
+                    let mut f32_buf = symphonia::core::audio::AudioBuffer::<f32>::new(
+                        duration,
+                        *audio_buf.spec()
+                    );
                     audio_buf.convert(&mut f32_buf);
                     
                     if needs_resampling {
@@ -371,11 +413,15 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                         
                         // 고품질 리샘플링 (FLAC 무손실 재생용)
                         if let Some(ref mut resampler) = resampler {
-                            // 채널별로 데이터 준비
+                            // 채널별로 데이터 준비 (최소 2채널 보장)
+                            let target_channel_count = channels_count.max(2);
                             let mut input_channels = Vec::new();
-                            for ch in 0..channels_count.max(2) {
+                            for ch in 0..target_channel_count {
                                 let channel_data: Vec<f32> = if channels_count > ch {
                                     f32_buf.chan(ch).iter().copied().collect()
+                                } else if ch == 1 && channels_count == 1 {
+                                    // 모노인 경우 오른쪽 채널에 왼쪽 채널 복사
+                                    f32_buf.chan(0).iter().copied().collect()
                                 } else {
                                     vec![0.0; frames]
                                 };
@@ -386,10 +432,13 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                             if let Ok(output_channels) = resampler.process(&input_channels, None) {
                                 // 인터리브된 형식으로 변환 (L, R, L, R, ...)
                                 let output_frames = output_channels[0].len();
+                                let output_channel_count = output_channels.len();
                                 let mut resampled = Vec::with_capacity(output_frames * 2);
                                 for frame_idx in 0..output_frames {
+                                    // 왼쪽 채널
                                     resampled.push(output_channels[0][frame_idx]);
-                                    if channels_count > 1 {
+                                    // 오른쪽 채널 (있으면 사용, 없으면 왼쪽 채널 복사)
+                                    if output_channel_count > 1 {
                                         resampled.push(output_channels[1][frame_idx]);
                                     } else {
                                         resampled.push(output_channels[0][frame_idx]);
@@ -451,19 +500,22 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                             batch_samples.extend(fallback);
                         }
                     } else {
-                        // 리샘플링 불필요: 직접 복사
+                        // 리샘플링 불필요: 직접 복사 (원음 그대로 - FLAC 무손실 재생)
+                        // 스테레오 출력을 보장하기 위해 항상 2채널로 인터리브 (L, R, L, R, ...)
                         for frame_idx in 0..frames {
-                            let sample = if channels_count > 0 {
+                            let left_sample = if channels_count > 0 {
                                 f32_buf.chan(0)[frame_idx]
                             } else {
                                 0.0
                             };
-                            batch_samples.push(sample);
-                            if channels_count > 1 {
-                                batch_samples.push(f32_buf.chan(1)[frame_idx]);
+                            let right_sample = if channels_count > 1 {
+                                f32_buf.chan(1)[frame_idx]
                             } else {
-                                batch_samples.push(sample);
-                            }
+                                // 모노인 경우 오른쪽 채널에 왼쪽 채널 복사
+                                left_sample
+                            };
+                            batch_samples.push(left_sample);
+                            batch_samples.push(right_sample);
                         }
                     }
                 }
@@ -479,12 +531,12 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
     });
     
     // cpal 스트림 생성
-    let stream = match config.sample_format() {
-        cpal::SampleFormat::F32 => build_stream::<f32>(&device, &config.into(), rx, state.clone())?,
-        cpal::SampleFormat::I16 => build_stream::<i16>(&device, &config.into(), rx, state.clone())?,
-        cpal::SampleFormat::I32 => build_stream::<i32>(&device, &config.into(), rx, state.clone())?,
-        cpal::SampleFormat::I64 => build_stream::<i64>(&device, &config.into(), rx, state.clone())?,
-        cpal::SampleFormat::U16 => build_stream::<u16>(&device, &config.into(), rx, state.clone())?,
+    let stream = match default_config.sample_format() {
+        cpal::SampleFormat::F32 => build_stream::<f32>(&device, &config, rx, state.clone())?,
+        cpal::SampleFormat::I16 => build_stream::<i16>(&device, &config, rx, state.clone())?,
+        cpal::SampleFormat::I32 => build_stream::<i32>(&device, &config, rx, state.clone())?,
+        cpal::SampleFormat::I64 => build_stream::<i64>(&device, &config, rx, state.clone())?,
+        cpal::SampleFormat::U16 => build_stream::<u16>(&device, &config, rx, state.clone())?,
         format => return Err(format!("Unsupported sample format: {:?}", format)),
     };
     
@@ -517,8 +569,9 @@ where
 {
     // 버퍼 사용 (로컬 파일이므로 작은 버퍼로도 충분)
     let sample_rate = config.sample_rate.0 as usize;
-    let mut sample_queue: VecDeque<f32> = VecDeque::with_capacity(sample_rate); // 약 0.5초 분량
-    let mut last_samples = [0.0f32, 0.0f32]; // 마지막 샘플 저장 (끊김 방지)
+    let channels = config.channels as usize;
+    let mut sample_queue: VecDeque<f32> = VecDeque::with_capacity(sample_rate * channels); // 채널 수 고려
+    let mut last_samples = vec![0.0f32; channels]; // 마지막 샘플 저장 (끊김 방지, 채널별)
     
     // 재생 시작 전에 버퍼를 미리 채우기 (프리로딩)
     // 최소 버퍼 크기: 약 0.1초 분량 (로컬 파일이므로 작게)
@@ -580,27 +633,31 @@ where
                         break;
                     }
                     Err(mpsc::TryRecvError::Disconnected) => {
-                        // 채널이 닫혔으면 재생 종료
-                        for sample in data.iter_mut() {
-                            *sample = T::from_sample(0.0);
+                        // 채널이 닫혔으면 마지막 샘플을 반복하여 끊김 방지
+                        // 재생이 끝났는지 확인하기 위해 상태 체크
+                        let state_check = state.lock().unwrap();
+                        if state_check.should_stop || !state_check.is_playing {
+                            // 명시적으로 중지된 경우에만 재생 종료
+                            for sample in data.iter_mut() {
+                                *sample = T::from_sample(0.0);
+                            }
+                            return;
                         }
-                        return;
+                        // 그 외의 경우는 마지막 샘플 반복 (일시적인 버퍼 문제일 수 있음)
+                        break;
                     }
                 }
             }
             
-            // 데이터 출력
+            // 데이터 출력 (인터리브 형식: L, R, L, R, ...)
             let mut output_idx = 0;
             while output_idx < data.len() && !sample_queue.is_empty() {
                 let sample = sample_queue.pop_front().unwrap() * volume;
                 data[output_idx] = T::from_sample(sample);
                 
-                // 마지막 샘플 저장 (끊김 방지용)
-                if output_idx % 2 == 0 {
-                    last_samples[0] = sample;
-                } else {
-                    last_samples[1] = sample;
-                }
+                // 마지막 샘플 저장 (끊김 방지용, 채널별)
+                let channel_idx = output_idx % channels;
+                last_samples[channel_idx] = sample;
                 
                 output_idx += 1;
             }
@@ -608,11 +665,8 @@ where
             // 남은 공간 처리 (버퍼가 부족한 경우)
             // 마지막 샘플을 반복하여 끊김을 최소화
             while output_idx < data.len() {
-                let sample = if output_idx % 2 == 0 {
-                    last_samples[0] * volume
-                } else {
-                    last_samples[1] * volume
-                };
+                let channel_idx = output_idx % channels;
+                let sample = last_samples[channel_idx] * volume;
                 data[output_idx] = T::from_sample(sample);
                 output_idx += 1;
             }

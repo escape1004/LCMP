@@ -26,7 +26,7 @@ interface PlayerStore {
   toggleMute: () => Promise<void>;
   toggleShuffle: () => void;
   toggleRepeat: () => void;
-  loadWaveform: (filePath: string) => Promise<void>;
+  loadWaveform: (song: Song) => Promise<void>;
   setDuration: (duration: number) => void;
   setCurrentTime: (time: number) => void;
   initializeAudio: (song: Song) => Promise<void>;
@@ -35,9 +35,6 @@ interface PlayerStore {
 
 export const usePlayerStore = create<PlayerStore>((set, get) => {
   const initializeAudio = async (song: Song) => {
-    // Rust 백엔드에서 오디오 재생 (파일을 메모리에 읽지 않고 스트리밍)
-    console.log('Initializing audio via Rust backend:', song.file_path);
-    
     try {
       // 기존 재생 중지
       await invoke('stop_audio').catch(() => {});
@@ -52,21 +49,24 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         isLoadingWaveform: true
       });
       
-      // 웨이폼 로드와 재생을 별도로 처리 (재생이 우선)
-      const { volume } = get();
+      // 웨이폼 로드를 먼저 완료
+      const { loadWaveform, volume } = get();
       
-      // 먼저 재생 시작 (웨이폼 로드를 기다리지 않음)
       try {
+        // 웨이폼 로드 완료까지 대기
+        await loadWaveform(song);
+        
+        // 웨이폼 로드 완료 후 재생 시작
         await invoke('play_audio', { 
           filePath: song.file_path,
           volume: volume / 100,
           seekTime: null // 새 재생이므로 seek 없음
         });
         set({ isPlaying: true });
-        console.log('Audio playback started');
       } catch (playErr) {
         console.error('Failed to play audio:', playErr);
-        set({ isPlaying: false });
+        set({ isPlaying: false, isLoadingWaveform: false });
+        throw playErr;
       }
       
       // duration 가져오기 (재생 제어와 완전히 분리, 백그라운드에서)
@@ -81,16 +81,9 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
             console.error('Failed to get audio duration:', err);
           });
       }
-      
-      // 웨이폼 로드는 백그라운드에서 진행
-      const { loadWaveform } = get();
-      loadWaveform(song.file_path).catch(err => {
-        console.error('Failed to load waveform:', err);
-        // 웨이폼 로드 실패해도 재생은 계속됨
-      });
     } catch (error) {
       console.error('Failed to initialize audio:', error);
-      set({ isPlaying: false });
+      set({ isPlaying: false, isLoadingWaveform: false });
       throw new Error(`Failed to initialize audio: ${error}`);
     }
   };
@@ -208,18 +201,34 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       });
     },
 
-    loadWaveform: async (filePath: string) => {
+    loadWaveform: async (song: Song) => {
       set({ isLoadingWaveform: true, waveform: [] });
       try {
-        // TODO: 추후 설정에서 가져오도록 변경
-        const waveformSamples = 150; // 기본값 150, 추후 사용자 설정으로 변경 예정
+        const waveformSamples = 150; // 기본값 150
         const chunkSize = 30; // 청크 크기: 30개 바
         
-        // 전체 웨이폼 추출
-        const fullWaveform = await invoke<number[]>('extract_waveform', { 
-          filePath,
-          samples: waveformSamples
-        });
+        let fullWaveform: number[] = [];
+        
+        // DB에 저장된 웨이폼이 있으면 사용, 없으면 추출
+        if (song.waveform_data && song.waveform_data.trim() !== '') {
+          try {
+            // JSON 파싱
+            fullWaveform = JSON.parse(song.waveform_data);
+          } catch (parseError) {
+            console.error('Failed to parse waveform_data from DB, extracting...', parseError);
+            // 파싱 실패 시 추출
+            fullWaveform = await invoke<number[]>('extract_waveform', { 
+              filePath: song.file_path,
+              samples: waveformSamples
+            });
+          }
+        } else {
+          // DB에 웨이폼이 없으면 추출
+          fullWaveform = await invoke<number[]>('extract_waveform', { 
+            filePath: song.file_path,
+            samples: waveformSamples
+          });
+        }
         
         // 웨이폼을 청크 단위로 나눠서 점진적으로 추가 (재생은 이미 시작됨)
         const waveform: number[] = [];

@@ -9,6 +9,7 @@ export interface Song {
   year: number | null;
   genre: string | null;
   album_art_path: string | null;
+  waveform_data: string | null; // JSON 배열로 저장된 웨이폼 데이터
   created_at: string;
   updated_at: string;
 }

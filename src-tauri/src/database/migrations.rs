@@ -71,6 +71,12 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         "ALTER TABLE folders ADD COLUMN \"order\" INTEGER DEFAULT 0",
         [],
     ).ok(); // 이미 존재하면 무시
+    
+    // songs 테이블에 waveform_data 컬럼 추가 (마이그레이션)
+    conn.execute(
+        "ALTER TABLE songs ADD COLUMN waveform_data TEXT",
+        [],
+    ).ok(); // 이미 존재하면 무시
 
     // playlists 테이블
     conn.execute(

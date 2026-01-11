@@ -25,12 +25,39 @@ const formatFileSize = (bytes: number): string => {
 export const PlaylistView = () => {
   const { folders, selectedFolderId } = useFolderStore();
   const { playlists, selectedPlaylistId } = usePlaylistStore();
-  const { songs, isLoading, loadSongsByFolder, loadSongsByPlaylist, clearSongs } = useSongStore();
+  // songs와 songsVersion을 함께 구독하여 변경사항을 확실히 감지
+  const storeSongs = useSongStore((state) => state.songs);
+  const songsVersion = useSongStore((state) => state.songsVersion);
+  const isLoading = useSongStore((state) => state.isLoading);
+  const generatingWaveformSongId = useSongStore((state) => state.generatingWaveformSongId);
+  const loadSongsByFolder = useSongStore((state) => state.loadSongsByFolder);
+  const loadSongsByPlaylist = useSongStore((state) => state.loadSongsByPlaylist);
+  const clearSongs = useSongStore((state) => state.clearSongs);
+  const checkGeneratingWaveform = useSongStore((state) => state.checkGeneratingWaveform);
+  
+  // songsVersion이 변경되면 강제로 리렌더링
+  const [songs, setSongs] = useState<Song[]>(storeSongs);
+  
+  useEffect(() => {
+    // songsVersion이 변경되면 무조건 업데이트 (강제 리렌더링)
+    setSongs([...storeSongs]);
+  }, [songsVersion]);
+  
+  // storeSongs 참조가 변경될 때도 업데이트
+  useEffect(() => {
+    setSongs([...storeSongs]);
+  }, [storeSongs]);
+  
   const { playSong } = useQueueStore();
   const [totalSize, setTotalSize] = useState<number>(0);
   const [isLoadingSize, setIsLoadingSize] = useState(false);
 
   const handleSongClick = async (song: Song) => {
+    // 웨이폼이 없는 노래는 클릭 비활성화
+    if (!song.waveform_data) {
+      return;
+    }
+    
     try {
       await playSong(song);
     } catch (error) {
@@ -47,6 +74,19 @@ export const PlaylistView = () => {
       clearSongs();
     }
   }, [selectedFolderId, selectedPlaylistId, loadSongsByFolder, loadSongsByPlaylist, clearSongs]);
+
+  // 웨이폼 생성 상태 주기적으로 확인
+  useEffect(() => {
+    const interval = setInterval(() => {
+      checkGeneratingWaveform();
+    }, 500); // 0.5초마다 확인
+
+    // 초기 확인
+    checkGeneratingWaveform();
+
+    return () => clearInterval(interval);
+  }, [checkGeneratingWaveform]);
+
 
   // 전체 재생 시간 계산
   const totalDuration = useMemo(() => {
@@ -148,26 +188,43 @@ export const PlaylistView = () => {
               </tr>
             </thead>
             <tbody>
-              {songs.map((song) => (
-                <tr
-                  key={song.id}
-                  className="border-b border-border hover:bg-hover transition-colors cursor-pointer"
-                  onClick={() => handleSongClick(song)}
-                >
-                  <td className="px-4 py-3 text-sm text-text-primary">
-                    {song.title || '제목 없음'}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-text-muted">
-                    {song.artist || '아티스트 없음'}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-text-muted">
-                    {song.album || '앨범 없음'}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-text-muted">
-                    {formatDuration(song.duration)}
-                  </td>
-                </tr>
-              ))}
+              {songs.map((song) => {
+                const hasWaveform = song.waveform_data !== null && song.waveform_data !== '';
+                const isGenerating = generatingWaveformSongId === song.id;
+                // songsVersion과 waveform_data를 key에 포함하여 변경 시 리렌더링 보장
+                const rowKey = `${song.id}-${songsVersion}-${song.waveform_data ? '1' : '0'}`;
+                return (
+                  <tr
+                    key={rowKey}
+                    className={`border-b border-border transition-colors ${
+                      hasWaveform
+                        ? 'hover:bg-hover cursor-pointer'
+                        : 'opacity-50 cursor-not-allowed bg-bg-secondary'
+                    }`}
+                    onClick={() => handleSongClick(song)}
+                  >
+                    <td className="px-4 py-3 text-sm text-text-primary">
+                      <div className="flex items-center gap-2">
+                        <span>{song.title || '제목 없음'}</span>
+                        {!hasWaveform && isGenerating && (
+                          <span className="text-xs text-text-muted italic">
+                            (웨이브폼 생성중...)
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-text-muted">
+                      {song.artist || '아티스트 없음'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-text-muted">
+                      {song.album || '앨범 없음'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-text-muted">
+                      {formatDuration(song.duration)}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
