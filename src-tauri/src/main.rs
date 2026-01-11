@@ -11,6 +11,7 @@ use commands::{
     get_playlists, create_playlist, update_playlist, update_playlist_order, remove_playlist,
     get_songs_by_folder, get_songs_by_playlist, get_all_songs,
     get_audio_duration, get_file_sizes,
+    play_audio, pause_audio, resume_audio, stop_audio, seek_audio, set_volume,
 };
 
 fn main() {
@@ -43,6 +44,12 @@ fn main() {
             get_all_songs,
             get_audio_duration,
             get_file_sizes,
+            play_audio,
+            pause_audio,
+            resume_audio,
+            stop_audio,
+            seek_audio,
+            set_volume,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
