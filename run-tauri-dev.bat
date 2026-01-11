@@ -12,3 +12,4 @@ set PATH=%PATH%;%USERPROFILE%\.cargo\bin
 
 REM Tauri 실행
 npm run tauri dev
+

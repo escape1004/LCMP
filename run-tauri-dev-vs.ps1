@@ -27,3 +27,4 @@ if (Test-Path $cargoPath) {
 # Tauri 실행
 Write-Host "Tauri 개발 서버 시작 중..." -ForegroundColor Green
 npm run tauri dev
+

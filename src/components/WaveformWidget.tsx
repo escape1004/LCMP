@@ -146,3 +146,4 @@ export const WaveformWidget = () => {
     </div>
   );
 };
+

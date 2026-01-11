@@ -30,3 +30,4 @@ pub fn get_connection() -> Result<Connection, String> {
         .map_err(|e| format!("Failed to open database: {}", e))?;
     Ok(conn)
 }
+

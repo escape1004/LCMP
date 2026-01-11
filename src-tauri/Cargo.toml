@@ -26,3 +26,4 @@ rayon = "1.8"  # 병렬 처리 라이브러리
 # This feature is used for production builds or when `devPath` points to the filesystem
 # DO NOT REMOVE!!
 custom-protocol = ["tauri/custom-protocol"]
+

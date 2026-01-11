@@ -85,3 +85,4 @@ export const Tooltip = ({ children, content, delay = 1500 }: TooltipProps) => {
     </>
   );
 };
+

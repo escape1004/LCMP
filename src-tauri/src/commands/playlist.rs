@@ -126,3 +126,4 @@ pub async fn remove_playlist(playlist_id: i64) -> Result<(), String> {
     
     Ok(())
 }
+

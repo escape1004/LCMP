@@ -85,3 +85,4 @@ export const useFolderStore = create<FolderStore>((set, get) => ({
     set({ selectedFolderId: folderId });
   },
 }));
+

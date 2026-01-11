@@ -180,3 +180,4 @@ pub async fn remove_folder(folder_id: i64) -> Result<(), String> {
     
     Ok(())
 }
+

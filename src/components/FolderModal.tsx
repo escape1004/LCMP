@@ -266,3 +266,4 @@ export const FolderModal = ({ isOpen, onClose, onConfirm, onDelete, folder }: Fo
     </div>
   );
 };
+
