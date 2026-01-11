@@ -42,7 +42,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       // 기존 재생 중지
       await invoke('stop_audio').catch(() => {});
       
-      // 상태 업데이트
+      // 상태 업데이트 (duration은 나중에 백그라운드에서 가져오기)
       set({ 
         currentSong: song,
         currentTime: 0,
@@ -52,25 +52,42 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         isLoadingWaveform: true
       });
       
-      // 웨이폼 로드 시작 (청크 단위로 점진적 로드, 첫 청크에서 재생 시작)
-      // loadWaveform 내부에서 첫 번째 청크가 추가될 때 재생이 시작됨
+      // 웨이폼 로드와 재생을 별도로 처리 (재생이 우선)
+      const { volume } = get();
+      
+      // 먼저 재생 시작 (웨이폼 로드를 기다리지 않음)
+      try {
+        await invoke('play_audio', { 
+          filePath: song.file_path,
+          volume: volume / 100,
+          seekTime: null // 새 재생이므로 seek 없음
+        });
+        set({ isPlaying: true });
+        console.log('Audio playback started');
+      } catch (playErr) {
+        console.error('Failed to play audio:', playErr);
+        set({ isPlaying: false });
+      }
+      
+      // duration 가져오기 (재생 제어와 완전히 분리, 백그라운드에서)
+      if (!song.duration || song.duration === 0) {
+        invoke<number>('get_audio_duration', { filePath: song.file_path })
+          .then((duration) => {
+            if (duration > 0) {
+              set({ duration });
+            }
+          })
+          .catch((err) => {
+            console.error('Failed to get audio duration:', err);
+          });
+      }
+      
+      // 웨이폼 로드는 백그라운드에서 진행
       const { loadWaveform } = get();
       loadWaveform(song.file_path).catch(err => {
         console.error('Failed to load waveform:', err);
-        // 웨이폼 로드 실패해도 재생은 시작
-        const { volume } = get();
-        invoke('play_audio', { 
-          filePath: song.file_path,
-          volume: volume / 100 
-        }).then(() => {
-          set({ isPlaying: true });
-        }).catch(playErr => {
-          console.error('Failed to play audio:', playErr);
-          set({ isPlaying: false });
-        });
+        // 웨이폼 로드 실패해도 재생은 계속됨
       });
-      
-      console.log('Waveform loading started, playback will begin when first chunk is ready');
     } catch (error) {
       console.error('Failed to initialize audio:', error);
       set({ isPlaying: false });
@@ -109,6 +126,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       try {
         await invoke('pause_audio');
         set({ isPlaying: false });
+        // currentTime은 그대로 유지 (일시정지 시 시간은 멈춤)
       } catch (error) {
         console.error('Pause error:', error);
       }
@@ -123,11 +141,18 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       }
     },
 
-    seek: async (time: number) => {
-      // rodio는 seek를 직접 지원하지 않으므로 나중에 구현
-      // 현재는 시간만 업데이트
-      set({ currentTime: time });
-    },
+          seek: async (time: number) => {
+            try {
+              // 프론트엔드 시간을 먼저 업데이트 (즉시 반응)
+              set({ currentTime: time });
+              // Rust 백엔드에서 seek 실행 (비동기로 처리)
+              invoke('seek_audio', { time }).catch((error) => {
+                console.error('Seek error:', error);
+              });
+            } catch (error) {
+              console.error('Seek error:', error);
+            }
+          },
 
     setVolume: async (volume: number) => {
       const clampedVolume = Math.max(0, Math.min(100, volume));
@@ -196,9 +221,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
           samples: waveformSamples
         });
         
-        // 웨이폼을 청크 단위로 나눠서 점진적으로 추가 (앞부분부터)
+        // 웨이폼을 청크 단위로 나눠서 점진적으로 추가 (재생은 이미 시작됨)
         const waveform: number[] = [];
-        let hasStartedPlayback = false;
         
         for (let i = 0; i < fullWaveform.length; i += chunkSize) {
           const chunkData = fullWaveform.slice(i, i + chunkSize);
@@ -209,21 +233,6 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
             waveform: [...waveform],
             isLoadingWaveform: waveform.length < waveformSamples
           }));
-          
-          // 첫 번째 청크가 추가되면 재생 시작
-          if (!hasStartedPlayback && chunkData.length > 0) {
-            hasStartedPlayback = true;
-            const { volume } = get();
-            invoke('play_audio', { 
-              filePath: filePath,
-              volume: volume / 100 
-            }).then(() => {
-              set({ isPlaying: true });
-              console.log('Audio playback started after first waveform chunk');
-            }).catch(err => {
-              console.error('Failed to play audio:', err);
-            });
-          }
           
           // 다음 청크 표시를 위한 짧은 지연 (시각적 효과)
           if (i + chunkSize < fullWaveform.length) {
@@ -243,7 +252,11 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     },
 
     setCurrentTime: (time) => {
-      set({ currentTime: time });
+      if (typeof time === 'function') {
+        set((state) => ({ currentTime: time(state.currentTime) }));
+      } else {
+        set({ currentTime: time });
+      }
     },
 
     initializeAudio: async (song: Song) => {

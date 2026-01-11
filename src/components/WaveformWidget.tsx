@@ -3,9 +3,10 @@ import { Loader2 } from "lucide-react";
 import { usePlayerStore } from "../stores/playerStore";
 
 export const WaveformWidget = () => {
-  const { waveform, currentTime, duration, seek, isLoadingWaveform } = usePlayerStore();
+  const { waveform, currentTime, duration, seek, isLoadingWaveform, currentSong, isPlaying, setCurrentTime } = usePlayerStore();
   const waveformRef = useRef<HTMLDivElement>(null);
   const [revealedCount, setRevealedCount] = useState(0);
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleWaveformClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!waveformRef.current || duration === 0) return;
@@ -56,6 +57,40 @@ export const WaveformWidget = () => {
     setRevealedCount(0);
   }, [waveform]);
 
+  // 재생 중일 때 프론트엔드에서만 시간 증가 (백엔드 재생 제어와 완전히 분리)
+  useEffect(() => {
+    // 기존 interval 정리
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+
+    // 재생 중이고 노래가 있을 때만 시간 증가
+    if (!isPlaying || !currentSong) {
+      return;
+    }
+
+    // duration이 0이 아니면 duration까지, 0이면 무제한으로 증가
+    progressIntervalRef.current = setInterval(() => {
+      setCurrentTime((prev) => {
+        if (duration > 0) {
+          const newTime = prev + 0.1;
+          return newTime >= duration ? duration : newTime;
+        } else {
+          // duration이 없으면 계속 증가 (나중에 duration이 설정되면 자동으로 멈춤)
+          return prev + 0.1;
+        }
+      });
+    }, 100); // 100ms마다 0.1초 증가
+
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+    };
+  }, [isPlaying, currentSong?.id, duration, setCurrentTime]);
+
   return (
     <div className="w-full h-12 bg-bg-sidebar border-t border-border">
       <div 
@@ -66,12 +101,15 @@ export const WaveformWidget = () => {
         {isLoadingWaveform ? (
           <Loader2 className="w-5 h-5 text-text-muted animate-spin" />
         ) : waveform.length === 0 ? (
-          <span className="text-text-muted text-xs">웨이폼 없음</span>
+          <span className="text-text-muted text-xs">
+            {currentSong ? "웨이폼 없음" : "노래를 재생해주세요"}
+          </span>
         ) : (
           <>
             {waveform.map((amplitude, index) => {
               const barHeight = Math.max(2, amplitude * 100); // 최소 2px 높이
-              const isPast = (index / waveform.length) * 100 < progressPercentage;
+              const barPosition = (index / waveform.length) * 100;
+              const isPast = barPosition < progressPercentage;
               
               // 블러 처리: 아직 렌더링되지 않은 부분은 블러, 렌더링된 부분은 점점 선명하게
               const isRevealed = index < revealedCount;
@@ -85,25 +123,23 @@ export const WaveformWidget = () => {
               // 모든 바가 렌더링되면 블러 완전 제거
               const finalBlur = revealedCount >= waveform.length ? 0 : blurAmount;
               
+              // 진행도 색상: 더 명확한 대비를 위해 밝은 파란색 사용
+              const progressColor = isPast ? '#5865f2' : '#4e5058';
+              
               return (
                 <div
                   key={index}
-                  className="flex-1 bg-hover rounded-sm transition-all relative"
+                  className="flex-1 rounded-sm transition-all relative"
                   style={{
                     height: `${barHeight}%`,
-                    backgroundColor: isPast ? '#5865f2' : '#4e5058',
+                    backgroundColor: progressColor,
                     filter: `blur(${finalBlur}px)`,
-                    opacity: isRevealed ? 1 : 0.3, // 아직 안 보이는 부분은 투명도도 낮춤
-                    transition: 'filter 0.1s ease-out, opacity 0.1s ease-out',
+                    opacity: isRevealed ? 1 : 0.3,
+                    transition: 'background-color 0.1s ease-out, filter 0.1s ease-out, opacity 0.1s ease-out',
                   }}
                 />
               );
             })}
-            {/* 재생 위치 표시선 */}
-            <div
-              className="absolute top-0 bottom-0 w-0.5 bg-accent pointer-events-none"
-              style={{ left: `${progressPercentage}%` }}
-            />
           </>
         )}
       </div>
