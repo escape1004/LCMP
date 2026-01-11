@@ -13,8 +13,8 @@ const formatDuration = (seconds: number | null): string => {
 };
 
 export const PlaylistView = () => {
-  const { selectedFolderId } = useFolderStore();
-  const { selectedPlaylistId } = usePlaylistStore();
+  const { folders, selectedFolderId } = useFolderStore();
+  const { playlists, selectedPlaylistId } = usePlaylistStore();
   const { songs, isLoading, loadSongsByFolder, loadSongsByPlaylist, clearSongs } = useSongStore();
   const { playSong } = useQueueStore();
 
@@ -34,11 +34,17 @@ export const PlaylistView = () => {
     } else {
       clearSongs();
     }
-  }, [selectedFolderId, selectedPlaylistId]);
+  }, [selectedFolderId, selectedPlaylistId, loadSongsByFolder, loadSongsByPlaylist, clearSongs]);
 
   const getTitle = () => {
-    if (selectedFolderId !== null) return '폴더 노래';
-    if (selectedPlaylistId !== null) return '플레이리스트 노래';
+    if (selectedFolderId !== null) {
+      const folder = folders.find((f) => f.id === selectedFolderId);
+      return folder ? folder.name : '폴더 노래';
+    }
+    if (selectedPlaylistId !== null) {
+      const playlist = playlists.find((p) => p.id === selectedPlaylistId);
+      return playlist ? playlist.name : '플레이리스트 노래';
+    }
     return '재생 목록';
   };
 
@@ -105,3 +111,4 @@ export const PlaylistView = () => {
     </div>
   );
 };
+
