@@ -2,21 +2,68 @@ import { useRef, useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { usePlayerStore } from "../stores/playerStore";
 
+const formatDuration = (seconds: number | null): string => {
+  if (seconds === null || seconds === undefined || isNaN(seconds)) return '--:--';
+  if (seconds === 0) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
 export const WaveformWidget = () => {
   const { waveform, currentTime, duration, seek, isLoadingWaveform, currentSong, isPlaying, setCurrentTime } = usePlayerStore();
   const waveformRef = useRef<HTMLDivElement>(null);
   const [revealedCount, setRevealedCount] = useState(0);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [hoverTime, setHoverTime] = useState<number | null>(null);
+  const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null);
 
   const handleWaveformClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!waveformRef.current || duration === 0) return;
     
     const rect = waveformRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const percentage = x / rect.width;
+    const padding = 48; // px-12 = 3rem = 48px (좌우 각각)
+    const x = e.clientX - rect.left - padding; // 패딩 제외
+    const waveformWidth = rect.width - (padding * 2); // 실제 웨이브 영역 너비
+    
+    // 웨이브 영역 내부인지 확인
+    if (x < 0 || x > waveformWidth) return;
+    
+    const percentage = x / waveformWidth;
     const newTime = percentage * duration;
     
     seek(newTime);
+  };
+
+  const handleWaveformMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!waveformRef.current || duration === 0) {
+      setHoverTime(null);
+      setHoverPosition(null);
+      return;
+    }
+    
+    const rect = waveformRef.current.getBoundingClientRect();
+    const padding = 48; // px-12 = 3rem = 48px (좌우 각각)
+    const x = e.clientX - rect.left - padding; // 패딩 제외
+    const waveformWidth = rect.width - (padding * 2); // 실제 웨이브 영역 너비
+    
+    // 웨이브 영역 내부인지 확인
+    if (x < 0 || x > waveformWidth) {
+      setHoverTime(null);
+      setHoverPosition(null);
+      return;
+    }
+    
+    const percentage = Math.max(0, Math.min(1, x / waveformWidth));
+    const time = percentage * duration;
+    
+    setHoverTime(time);
+    setHoverPosition({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleWaveformMouseLeave = () => {
+    setHoverTime(null);
+    setHoverPosition(null);
   };
 
   const progressPercentage = duration > 0 ? (currentTime / duration) * 100 : 0;
@@ -92,12 +139,42 @@ export const WaveformWidget = () => {
   }, [isPlaying, currentSong?.id, duration, setCurrentTime]);
 
   return (
-    <div className="w-full h-12 bg-bg-sidebar border-t border-border">
+    <div className="w-full h-16 bg-bg-sidebar border-t border-border relative">
+      {/* 호버 툴팁 */}
+      {hoverTime !== null && hoverPosition && (
+        <div
+          className="fixed z-50 px-2 py-1.5 text-xs font-medium text-white bg-[#18191c] rounded shadow-lg pointer-events-none whitespace-nowrap"
+          style={{
+            top: `${hoverPosition.y}px`,
+            left: `${hoverPosition.x}px`,
+            transform: 'translate(-50%, calc(-100% - 8px))',
+          }}
+        >
+          {formatDuration(hoverTime)}
+          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-[#18191c]"></div>
+        </div>
+      )}
+      
       <div 
         ref={waveformRef}
-        className="w-full h-full flex items-center justify-center gap-[2px] px-2 cursor-pointer relative"
-        onClick={handleWaveformClick}
+        className={`w-full h-full flex items-center justify-center gap-[2px] px-12 py-2 relative ${
+          currentSong ? 'cursor-pointer' : 'cursor-default'
+        }`}
+        onClick={currentSong ? handleWaveformClick : undefined}
+        onMouseMove={currentSong ? handleWaveformMouseMove : undefined}
+        onMouseLeave={currentSong ? handleWaveformMouseLeave : undefined}
       >
+        {/* 시간 표시 - 좌측 현재 시간, 우측 전체 시간 - 웨이폼 좌우 끝에 배치 */}
+        {currentSong && (
+          <div className="absolute inset-0 flex items-center justify-between px-3 pointer-events-none z-10">
+            <span className="text-xs text-text-muted font-medium">
+              {formatDuration(currentTime)}
+            </span>
+            <span className="text-xs text-text-muted font-medium">
+              {formatDuration(duration)}
+            </span>
+          </div>
+        )}
         {isLoadingWaveform ? (
           <Loader2 className="w-5 h-5 text-text-muted animate-spin" />
         ) : waveform.length === 0 ? (

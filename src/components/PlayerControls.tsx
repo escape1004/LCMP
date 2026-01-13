@@ -130,7 +130,7 @@ export const PlayerControls = () => {
           </Tooltip>
           <Tooltip content={isPlaying ? "일시정지" : "재생"}>
             <button 
-              className="p-2 hover:bg-hover rounded transition-colors"
+              className="p-2 hover:bg-hover rounded transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
               onClick={async (e) => {
                 e.stopPropagation();
                 await togglePlayPause();

@@ -714,12 +714,12 @@ pub async fn stop_audio() -> Result<(), String> {
 
 #[tauri::command]
 pub async fn seek_audio(time: f64) -> Result<(), String> {
-    let file_path_and_volume = {
+    let file_path_volume_and_paused = {
         let state_guard = PLAYER_STATE.lock().unwrap();
         if let Some(state) = state_guard.as_ref() {
             let player_state = state.lock().unwrap();
             if let Some(file_path) = &player_state.current_file {
-                Some((file_path.clone(), player_state.volume))
+                Some((file_path.clone(), player_state.volume, player_state.is_paused))
             } else {
                 None
             }
@@ -728,8 +728,14 @@ pub async fn seek_audio(time: f64) -> Result<(), String> {
         }
     };
     
-    if let Some((file_path, volume)) = file_path_and_volume {
+    if let Some((file_path, volume, was_paused)) = file_path_volume_and_paused {
+        // 일시정지 상태를 유지하기 위해 play_audio 후에 다시 일시정지
         play_audio(file_path, volume, Some(time)).await?;
+        
+        // 일시정지 상태였으면 다시 일시정지
+        if was_paused {
+            pause_audio().await?;
+        }
     }
     Ok(())
 }
