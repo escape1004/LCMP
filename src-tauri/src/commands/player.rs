@@ -15,6 +15,7 @@ use symphonia::core::audio::Signal;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::Sample;
 use rubato::{Resampler, SincFixedIn, SincInterpolationType, SincInterpolationParameters, WindowFunction};
+use crate::database::get_connection;
 
 // 플레이어 상태
 struct PlayerState {
@@ -747,5 +748,43 @@ pub async fn set_volume(volume: f32) -> Result<(), String> {
         let mut player_state = state.lock().unwrap();
         player_state.volume = volume.max(0.0).min(1.0);
     }
+    
+    // 볼륨을 데이터베이스에 저장
+    let conn = get_connection().map_err(|e| e.to_string())?;
+    let volume_percent = (volume * 100.0) as i32;
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?1, ?2, CURRENT_TIMESTAMP)",
+        ["volume", &volume_percent.to_string()],
+    )
+    .map_err(|e| format!("Failed to save volume: {}", e))?;
+    
     Ok(())
+}
+
+#[tauri::command]
+pub async fn get_saved_volume() -> Result<f32, String> {
+    let conn = get_connection().map_err(|e| e.to_string())?;
+    
+    let mut stmt = conn
+        .prepare("SELECT value FROM settings WHERE key = ?1")
+        .map_err(|e| e.to_string())?;
+    
+    let volume_result = stmt
+        .query_row(["volume"], |row| {
+            let value: String = row.get(0)?;
+            Ok(value)
+        });
+    
+    match volume_result {
+        Ok(value_str) => {
+            let volume_percent: i32 = value_str.parse()
+                .map_err(|e| format!("Failed to parse volume: {}", e))?;
+            Ok((volume_percent as f32) / 100.0)
+        }
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            // 저장된 볼륨이 없으면 기본값 반환
+            Ok(0.5)
+        }
+        Err(e) => Err(format!("Failed to get volume: {}", e)),
+    }
 }

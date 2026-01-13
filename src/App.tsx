@@ -1,12 +1,20 @@
+import { useEffect } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { PlaylistView } from "./components/PlaylistView";
 import { PlayerControls } from "./components/PlayerControls";
 import { QueueView } from "./components/QueueView";
 import { WaveformWidget } from "./components/WaveformWidget";
 import { useQueueStore } from "./stores/queueStore";
+import { usePlayerStore } from "./stores/playerStore";
 
 function App() {
   const { isOpen } = useQueueStore();
+  const { loadSavedVolume } = usePlayerStore();
+
+  // 앱 시작 시 저장된 볼륨 불러오기
+  useEffect(() => {
+    loadSavedVolume();
+  }, [loadSavedVolume]);
 
   return (
     <div className="w-screen h-screen bg-bg-primary text-text-primary font-noto flex flex-col overflow-hidden">

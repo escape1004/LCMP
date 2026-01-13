@@ -31,6 +31,7 @@ interface PlayerStore {
   setCurrentTime: (time: number) => void;
   initializeAudio: (song: Song) => Promise<void>;
   cleanup: () => Promise<void>;
+  loadSavedVolume: () => Promise<void>;
 }
 
 export const usePlayerStore = create<PlayerStore>((set, get) => {
@@ -279,6 +280,19 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         console.error('Cleanup error:', error);
       }
       set({ currentSong: null, isPlaying: false });
+    },
+
+    loadSavedVolume: async () => {
+      try {
+        const savedVolume = await invoke<number>('get_saved_volume');
+        const volumePercent = Math.round(savedVolume * 100);
+        set({ volume: volumePercent });
+        // 백엔드에도 볼륨 설정
+        await invoke('set_volume', { volume: savedVolume });
+      } catch (error) {
+        console.error('Failed to load saved volume:', error);
+        // 에러 발생 시 기본값 유지
+      }
     },
   };
 });

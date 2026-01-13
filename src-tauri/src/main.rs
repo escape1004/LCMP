@@ -12,7 +12,7 @@ use commands::{
     get_songs_by_folder, get_songs_by_playlist, get_all_songs, get_song_by_id,
     get_audio_duration, get_file_sizes, get_current_generating_waveform_song_id,
     play_audio, pause_audio, resume_audio, stop_audio, seek_audio, set_volume,
-    extract_waveform,
+    get_saved_volume, extract_waveform,
 };
 
 fn main() {
@@ -53,6 +53,7 @@ fn main() {
             stop_audio,
             seek_audio,
             set_volume,
+            get_saved_volume,
             extract_waveform,
         ])
         .run(tauri::generate_context!())
