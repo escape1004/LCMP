@@ -52,13 +52,14 @@ export const PlaylistView = () => {
   const [totalSize, setTotalSize] = useState<number>(0);
   const [isLoadingSize, setIsLoadingSize] = useState(false);
 
-  const handleSongClick = async (song: Song) => {
-    // 웨이폼이 없는 노래는 클릭 비활성화
+  const handleSongDoubleClick = async (song: Song) => {
+    // 웨이폼이 없는 노래는 더블클릭 비활성화
     if (!song.waveform_data) {
       return;
     }
     
     try {
+      // 대기열에 추가하고 재생
       await playSong(song);
     } catch (error) {
       console.error('Failed to play song:', error);
@@ -198,10 +199,10 @@ export const PlaylistView = () => {
                     key={rowKey}
                     className={`border-b border-border transition-colors ${
                       hasWaveform
-                        ? 'hover:bg-hover cursor-pointer'
+                        ? 'hover:bg-hover'
                         : 'opacity-50 cursor-not-allowed bg-bg-secondary'
                     }`}
-                    onClick={() => handleSongClick(song)}
+                    onDoubleClick={() => handleSongDoubleClick(song)}
                   >
                     <td className="px-4 py-3 text-sm text-text-primary">
                       <div className="flex items-center gap-2">
