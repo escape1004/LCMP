@@ -32,6 +32,11 @@ export const PlayerControls = () => {
   const titleContainerRef = useRef<HTMLDivElement>(null);
   const titleTextRef = useRef<HTMLSpanElement>(null);
   const [needsMarquee, setNeedsMarquee] = useState(false);
+  
+  // 볼륨 드래그 상태
+  const [isDraggingVolume, setIsDraggingVolume] = useState(false);
+  const [dragVolume, setDragVolume] = useState(volume);
+  const volumeBarRef = useRef<HTMLDivElement>(null);
 
   const checkMarquee = () => {
     if (titleContainerRef.current && titleTextRef.current) {
@@ -68,6 +73,59 @@ export const PlayerControls = () => {
       window.removeEventListener('resize', checkMarquee);
     };
   }, [title]);
+
+  // 볼륨 드래그 핸들러
+  const handleVolumeMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsDraggingVolume(true);
+    if (volumeBarRef.current) {
+      const rect = volumeBarRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const newVolume = Math.max(0, Math.min(100, (x / rect.width) * 100));
+      setDragVolume(newVolume);
+      setVolume(newVolume);
+    }
+  };
+
+  // 볼륨 휠 핸들러
+  const handleVolumeWheel = (e: React.WheelEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -5 : 5; // 아래로 스크롤하면 감소, 위로 스크롤하면 증가
+    const currentVol = isMuted ? 0 : (isDraggingVolume ? dragVolume : volume);
+    const newVolume = Math.max(0, Math.min(100, currentVol + delta));
+    setVolume(newVolume);
+    if (isMuted && newVolume > 0) {
+      // 볼륨이 0보다 크면 음소거 해제
+      toggleMute();
+    }
+  };
+
+  useEffect(() => {
+    if (!isDraggingVolume) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (volumeBarRef.current) {
+        const rect = volumeBarRef.current.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const newVolume = Math.max(0, Math.min(100, (x / rect.width) * 100));
+        setDragVolume(newVolume);
+        setVolume(newVolume);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingVolume(false);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDraggingVolume, setVolume]);
 
   return (
     <div className="bg-bg-sidebar border-t border-border">
@@ -223,21 +281,36 @@ export const PlayerControls = () => {
                 )}
               </button>
             </Tooltip>
-            <div 
-              className="w-24 h-1 bg-hover rounded-full cursor-pointer relative"
-              onClick={(e) => {
-                e.stopPropagation();
-                const rect = e.currentTarget.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const newVolume = Math.max(0, Math.min(100, (x / rect.width) * 100));
-                setVolume(newVolume);
-              }}
-            >
+            <Tooltip content={`볼륨: ${Math.round(isMuted ? 0 : (isDraggingVolume ? dragVolume : volume))}%`} delay={0}>
               <div 
-                className="h-full bg-accent rounded-full transition-all" 
-                style={{ width: `${isMuted ? 0 : volume}%` }}
-              ></div>
-            </div>
+                ref={volumeBarRef}
+                className="w-24 h-1 bg-hover rounded-full cursor-pointer relative group"
+                onMouseDown={handleVolumeMouseDown}
+                onWheel={handleVolumeWheel}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (volumeBarRef.current) {
+                    const rect = volumeBarRef.current.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const newVolume = Math.max(0, Math.min(100, (x / rect.width) * 100));
+                    setVolume(newVolume);
+                  }
+                }}
+              >
+                <div 
+                  className="h-full bg-accent rounded-full transition-all relative" 
+                  style={{ width: `${isMuted ? 0 : (isDraggingVolume ? dragVolume : volume)}%` }}
+                >
+                  {/* 동그란 손잡이 */}
+                  <div
+                    className="absolute right-0 top-1/2 transform -translate-y-1/2 translate-x-1/2 w-3 h-3 bg-accent rounded-full border-2 border-white shadow-md"
+                    style={{ 
+                      display: isMuted ? 'none' : 'block'
+                    }}
+                  ></div>
+                </div>
+              </div>
+            </Tooltip>
           </div>
 
           {/* Queue Toggle Button */}
