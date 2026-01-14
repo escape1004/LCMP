@@ -5,6 +5,7 @@ use std::thread;
 use std::time::Duration;
 use std::sync::mpsc;
 use std::collections::VecDeque;
+use std::mem;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::{MediaSourceStream, MediaSourceStreamOptions};
 use symphonia::core::meta::MetadataOptions;
@@ -52,7 +53,7 @@ struct PlayerState {
     current_file: Option<String>,
     volume: f32,
     seek_time: Option<f64>,
-    samples_played: u64, // 실제로 오디오 스트림에서 출력된 샘플 수 (스테레오 샘플 수)
+    samples_played: u64, // 실제로 오디오 스트림에서 출력된 프레임 수 (채널 수와 무관)
     rt_state: Option<Arc<RtState>>, // 실시간 상태 참조
     // ✅ should_stop은 rt_state.should_stop만 사용 (중복 제거)
 }
@@ -451,9 +452,9 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
     }
     
     // 채널을 통한 오디오 데이터 전달 (bounded channel로 버퍼 크기 제한)
-    // 버퍼 크기를 충분히 크게 설정 (약 10초 분량 - AIMP처럼 안정적인 재생을 위해)
-    // 각 Vec<f32>가 수백~수천 샘플을 담으므로, 충분히 큰 버퍼 필요
-    let buffer_size = (target_sample_rate * 10) as usize; // 약 10초 분량 (Vec 개수)
+    // ✅ Vec 개수 기준으로 현실적인 크기 설정 (각 Vec는 BATCH_MAX_SAMPLES로 제한됨)
+    // 256개 Vec = 약 256 * 16384 * 2 = 8M 샘플 = 약 90초 분량 (44.1kHz 기준)
+    let buffer_size = 256; // Vec 메시지 개수 (BATCH_MAX로 각 Vec 크기 제한)
     let (tx, rx) = mpsc::sync_channel::<Vec<f32>>(buffer_size);
     
     // 디코딩 스레드 (format과 decoder를 클로저로 이동)
@@ -500,13 +501,14 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
         let mut decoded_err = 0u64;
         let mut sent_samples = 0u64;
         let mut last_log = std::time::Instant::now();
+        let mut last_pending_warn = std::time::Instant::now(); // ✅ pending 경고 쿨다운
 
         'decode_loop: loop {
             if rt_state_clone.should_stop.load(Ordering::Relaxed) {
                 break 'decode_loop;
             }
 
-            batch_samples.clear();
+            // ✅ batch_samples.clear() 제거: 샘플을 누적하다가 임계치 넘으면 전송
 
             for _ in 0..BATCH_SIZE {
                 // ✅ 오디오 트랙 패킷을 찾을 때까지 스캔 (시간 기준으로 변경)
@@ -593,10 +595,9 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                                 }
                             }
 
-                            // ✅ clone 제거: EOF에서도 drain 사용
+                            // ✅ EOF에서도 mem::take로 통째 전송 (복사 비용 제거)
                             if !batch_samples.is_empty() {
-                                let mut out = Vec::new();
-                                out.extend(batch_samples.drain(..));
+                                let out = mem::take(&mut batch_samples);
                                 let _ = tx.send(out);
                             }
                             break 'decode_loop;
@@ -667,17 +668,21 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
 
                             pending_l.push_back(l);
                             pending_r.push_back(r);
-                            
-                            // ✅ (A) pending 최대 길이 상한 체크 (메모리 폭증 방지)
-                            if pending_l.len() > PENDING_MAX || pending_r.len() > PENDING_MAX {
-                                // 가장 오래된 샘플 drop
-                                while pending_l.len() > PENDING_MAX {
-                                    pending_l.pop_front();
-                                }
-                                while pending_r.len() > PENDING_MAX {
-                                    pending_r.pop_front();
-                                }
+                        }
+                        
+                        // ✅ (A) pending 상한 체크는 패킷 처리 후 한 번만 (로그는 쿨다운으로 제한)
+                        if pending_l.len() > PENDING_MAX || pending_r.len() > PENDING_MAX {
+                            // 가장 오래된 샘플 drop
+                            while pending_l.len() > PENDING_MAX {
+                                pending_l.pop_front();
+                            }
+                            while pending_r.len() > PENDING_MAX {
+                                pending_r.pop_front();
+                            }
+                            // ✅ 로그는 1초에 1번만
+                            if last_pending_warn.elapsed() > Duration::from_secs(1) {
                                 eprintln!("Warning: pending buffer exceeded limit, dropping oldest samples");
+                                last_pending_warn = std::time::Instant::now();
                             }
                         }
 
@@ -762,15 +767,11 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                 }
             }
 
-            // ✅ clone 제거: swap으로 성능 개선
-            // ✅ (B) batch_samples가 최대 크기를 넘으면 여러 번 전송
-            while !batch_samples.is_empty() {
-                let send_count = batch_samples.len().min(BATCH_MAX_SAMPLES);
-                let mut out = Vec::with_capacity(send_count);
-                
-                // 앞에서부터 최대 크기만큼만 전송 (drain 사용)
-                out.extend(batch_samples.drain(..send_count));
-                
+            // ✅ (B) batch_samples가 BATCH_MAX_SAMPLES 이상이면 고정 크기로 전송 (안정적인 전송)
+            // ✅ while 루프로 여러 번 전송 가능 (큰 덩어리가 쌓였을 때 대응)
+            while batch_samples.len() >= BATCH_MAX_SAMPLES {
+                let out: Vec<f32> = batch_samples.drain(..BATCH_MAX_SAMPLES).collect();
+                let send_count = out.len();
                 if tx.send(out).is_ok() {
                     sent_samples += send_count as u64;
                 } else {
@@ -785,6 +786,15 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
             }
         }
 
+        // ✅ 루프 종료 시 남은 batch_samples 전송
+        if !batch_samples.is_empty() {
+            let out = mem::take(&mut batch_samples);
+            let send_count = out.len();
+            if tx.send(out).is_ok() {
+                sent_samples += send_count as u64;
+            }
+        }
+        
         eprintln!("Decoding thread: exiting, closing channel");
         eprintln!("Debug stats: decoded_ok={}, decoded_err={}, sent_samples={}", decoded_ok, decoded_err, sent_samples);
         drop(tx);
@@ -844,7 +854,9 @@ where
     
     // 재생 시작 전에 버퍼를 미리 채우기 (프리로딩)
     // 최소 버퍼 크기: 약 2초 분량 (AIMP처럼 안정적인 재생을 위해)
-    let min_buffer_size = sample_rate * 2 * channels; // 2초 분량
+    // ✅ 프레임 기준으로 계산 (내부는 항상 LR 2채널)
+    let min_frames = sample_rate * 2; // 2초 분량의 프레임 수
+    let min_buffer_size = min_frames * 2; // LR 인터리브 (2채널)
     let mut preload_attempts = 0;
     const MAX_PRELOAD_ATTEMPTS: usize = 100; // 프리로딩을 위해 더 많은 시도 허용
     let mut silent_preload_loops = 0; // 빈 샘플 연속 카운트
@@ -900,7 +912,10 @@ where
             
             // ✅ 버퍼가 부족하면 채널에서 데이터 가져오기 (non-blocking)
             // RT 콜백에서는 블로킹하지 않음 - try_recv만 사용
-            while sample_queue.len() < data.len() {
+            // ✅ 프레임 기준으로 계산 (내부는 LR 2채널, 출력 장치 채널 수와 무관)
+            let frames = data.len() / channels;
+            let need_lr = frames * 2; // LR 인터리브
+            while sample_queue.len() < need_lr {
                 match rx.try_recv() {
                     Ok(samples) => {
                         sample_queue.extend(samples);
@@ -912,8 +927,25 @@ where
                     Err(mpsc::TryRecvError::Disconnected) => {
                         // 채널이 닫혔으면 디코이 끝난 것
                         // sample_queue에 남은 샘플이 있으면 계속 재생
+                        // ✅ 디버그: 연결 끊김은 한 번만 로그
+                        static mut DISCONNECT_LOG: bool = false;
+                        unsafe {
+                            if !DISCONNECT_LOG {
+                                eprintln!("[rt] rx disconnected");
+                                DISCONNECT_LOG = true;
+                            }
+                        }
                         break;
                     }
+                }
+            }
+            
+            // ✅ 디버그: 볼륨 확인 (처음 몇 번만)
+            static mut VOLUME_LOG_COUNT: u32 = 0;
+            unsafe {
+                if VOLUME_LOG_COUNT < 3 {
+                    eprintln!("[rt] volume={}, queue_len={}", volume, sample_queue.len());
+                    VOLUME_LOG_COUNT += 1;
                 }
             }
             
