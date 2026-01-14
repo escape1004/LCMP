@@ -127,3 +127,50 @@ pub async fn remove_playlist(playlist_id: i64) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub async fn add_song_to_playlist(playlist_id: i64, song_id: i64) -> Result<(), String> {
+    let conn = get_connection().map_err(|e| e.to_string())?;
+    
+    // 이미 추가되어 있는지 확인
+    let exists: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM playlist_songs WHERE playlist_id = ?1 AND song_id = ?2)",
+            params![playlist_id, song_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    
+    if exists {
+        return Err("이미 플레이리스트에 추가된 노래입니다.".to_string());
+    }
+    
+    // 플레이리스트의 현재 노래 개수로 position 설정
+    let position: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM playlist_songs WHERE playlist_id = ?1",
+            params![playlist_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    
+    conn.execute(
+        "INSERT INTO playlist_songs (playlist_id, song_id, position) VALUES (?1, ?2, ?3)",
+        params![playlist_id, song_id, position],
+    )
+    .map_err(|e| e.to_string())?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn remove_song_from_playlist(playlist_id: i64, song_id: i64) -> Result<(), String> {
+    let conn = get_connection().map_err(|e| e.to_string())?;
+    
+    conn.execute(
+        "DELETE FROM playlist_songs WHERE playlist_id = ?1 AND song_id = ?2",
+        params![playlist_id, song_id],
+    )
+    .map_err(|e| e.to_string())?;
+    
+    Ok(())
+}

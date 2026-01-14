@@ -7,7 +7,8 @@ interface SongContextMenuProps {
   y: number;
   onClose: () => void;
   onAddToQueue: (song: Song) => void;
-  onAddToPlaylist: (song: Song) => void;
+  onAddToPlaylist?: (song: Song) => void;
+  onRemoveFromPlaylist?: (song: Song) => void;
   onEditMetadata: (song: Song) => void;
 }
 
@@ -18,6 +19,7 @@ export const SongContextMenu = ({
   onClose,
   onAddToQueue,
   onAddToPlaylist,
+  onRemoveFromPlaylist,
   onEditMetadata,
 }: SongContextMenuProps) => {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -97,15 +99,27 @@ export const SongContextMenu = ({
       >
         대기열 추가
       </button>
-      <button
-        onClick={() => {
-          onAddToPlaylist(song);
-          onClose();
-        }}
-        className="block w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-hover transition-colors whitespace-nowrap"
-      >
-        플레이리스트 추가
-      </button>
+      {onRemoveFromPlaylist ? (
+        <button
+          onClick={() => {
+            onRemoveFromPlaylist(song);
+            onClose();
+          }}
+          className="block w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-hover transition-colors whitespace-nowrap"
+        >
+          플레이리스트에서 삭제
+        </button>
+      ) : onAddToPlaylist ? (
+        <button
+          onClick={() => {
+            onAddToPlaylist(song);
+            onClose();
+          }}
+          className="block w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-hover transition-colors whitespace-nowrap"
+        >
+          플레이리스트 추가
+        </button>
+      ) : null}
       <button
         onClick={() => {
           // 추후 개발 예정

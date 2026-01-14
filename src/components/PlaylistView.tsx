@@ -13,6 +13,7 @@ import { ArrowUp, ArrowDown, Play, Search, X } from 'lucide-react';
 import { Tooltip } from './ui/tooltip';
 import { Input } from './ui/input';
 import { SongContextMenu } from './SongContextMenu';
+import { PlaylistSelectModal } from './PlaylistSelectModal';
 
 const formatDuration = (seconds: number | null): string => {
   if (seconds === null || seconds === undefined) return '--:--';
@@ -83,6 +84,10 @@ export const PlaylistView = () => {
     x: number;
     y: number;
   } | null>(null);
+  
+  // 플레이리스트 선택 모달
+  const [isPlaylistSelectModalOpen, setIsPlaylistSelectModalOpen] = useState(false);
+  const [selectedSongForPlaylist, setSelectedSongForPlaylist] = useState<Song | null>(null);
   
   // 컬럼 설정 로드 (앱 시작 시 한 번만)
   useEffect(() => {
@@ -395,8 +400,55 @@ export const PlaylistView = () => {
   };
 
   const handleAddToPlaylist = (song: Song) => {
-    // TODO: 플레이리스트 추가 기능 구현
-    console.log('Add to playlist:', song);
+    setSelectedSongForPlaylist(song);
+    setIsPlaylistSelectModalOpen(true);
+  };
+  
+  const handleRemoveFromPlaylist = async (song: Song) => {
+    if (selectedPlaylistId === null) return;
+    
+    try {
+      await invoke('remove_song_from_playlist', {
+        playlistId: selectedPlaylistId,
+        songId: song.id,
+      });
+      
+      const { showToast } = useToastStore.getState();
+      const playlist = playlists.find((p) => p.id === selectedPlaylistId);
+      showToast(`${playlist?.name || '플레이리스트'}에서 삭제되었습니다.`);
+      
+      // 노래 목록 새로고침
+      loadSongsByPlaylist(selectedPlaylistId);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const { showToast } = useToastStore.getState();
+      showToast(errorMessage || '플레이리스트에서 삭제하는데 실패했습니다.');
+    }
+  };
+  
+  const handlePlaylistSelect = async (playlistId: number) => {
+    if (!selectedSongForPlaylist) return;
+    
+    try {
+      await invoke('add_song_to_playlist', {
+        playlistId,
+        songId: selectedSongForPlaylist.id,
+      });
+      
+      const { showToast } = useToastStore.getState();
+      const playlist = playlists.find((p) => p.id === playlistId);
+      showToast(`${playlist?.name || '플레이리스트'}에 추가되었습니다.`);
+      
+      // 현재 플레이리스트가 선택된 플레이리스트라면 노래 목록 새로고침
+      if (selectedPlaylistId === playlistId) {
+        loadSongsByPlaylist(playlistId);
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const { showToast } = useToastStore.getState();
+      showToast(errorMessage || '플레이리스트에 추가하는데 실패했습니다.');
+      throw error;
+    }
   };
 
   const handleEditMetadata = (song: Song) => {
@@ -758,10 +810,21 @@ export const PlaylistView = () => {
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
           onAddToQueue={handleAddToQueue}
-          onAddToPlaylist={handleAddToPlaylist}
+          onAddToPlaylist={selectedPlaylistId === null ? handleAddToPlaylist : undefined}
+          onRemoveFromPlaylist={selectedPlaylistId !== null ? handleRemoveFromPlaylist : undefined}
           onEditMetadata={handleEditMetadata}
         />
       )}
+      
+      <PlaylistSelectModal
+        isOpen={isPlaylistSelectModalOpen}
+        onClose={() => {
+          setIsPlaylistSelectModalOpen(false);
+          setSelectedSongForPlaylist(null);
+        }}
+        onSelect={handlePlaylistSelect}
+        songTitle={selectedSongForPlaylist?.title || undefined}
+      />
     </div>
   );
 };
