@@ -85,8 +85,12 @@ export const PlayerControls = () => {
                   hasAutoPlayedNextRef.current = false;
                 });
               } else {
-                // 반복 모드가 off이고 마지막 곡이면 플래그만 리셋
+                // 반복 모드가 off이고 마지막 곡이면 일시정지 상태로 전환
                 hasAutoPlayedNextRef.current = false;
+                // 일시정지 상태로 전환
+                usePlayerStore.getState().pause().catch(err => {
+                  console.error('Failed to pause after last song:', err);
+                });
               }
             }
           }, 100); // 100ms 지연
@@ -99,6 +103,61 @@ export const PlayerControls = () => {
     
     prevIsPlayingRef.current = nowPlaying;
   }, [isPlaying, currentSong, currentTime, duration, playNext, playSong]);
+  
+  // ✅ 추가: currentTime이 duration에 도달했는지 주기적으로 확인 (백엔드 상태와 무관하게)
+  useEffect(() => {
+    if (!isPlaying || !currentSong || duration <= 0) {
+      return;
+    }
+    
+    // currentTime이 duration에 도달했는지 확인
+    const checkInterval = setInterval(() => {
+      const { currentTime: ct, duration: dur, isPlaying: playing } = usePlayerStore.getState();
+      
+      // 재생 중이고, currentTime이 duration에 도달했거나 약간 초과한 경우
+      if (playing && dur > 0 && ct >= dur - 0.1) {
+        // 백엔드 상태 확인 (isPlaying이 false인지)
+        // 하지만 백엔드에서 isPlaying 상태를 직접 확인할 수 없으므로,
+        // currentTime이 duration에 도달했다고 가정하고 다음 곡 재생
+        if (!hasAutoPlayedNextRef.current) {
+          hasAutoPlayedNextRef.current = true;
+          
+          setTimeout(() => {
+            const { repeat } = usePlayerStore.getState();
+            const state = useQueueStore.getState();
+            
+            if (state.currentIndex !== null) {
+              if (repeat === 'one') {
+                playSong(currentSong).catch(err => {
+                  console.error('Failed to replay song:', err);
+                  hasAutoPlayedNextRef.current = false;
+                });
+              } else if (state.currentIndex < state.queue.length - 1) {
+                playNext().catch(err => {
+                  console.error('Failed to play next song:', err);
+                  hasAutoPlayedNextRef.current = false;
+                });
+              } else if (repeat === 'all') {
+                useQueueStore.getState().playSongAtIndex(0).catch(err => {
+                  console.error('Failed to replay from start:', err);
+                  hasAutoPlayedNextRef.current = false;
+                });
+              } else {
+                // 반복 모드가 off이고 마지막 곡이면 일시정지 상태로 전환
+                hasAutoPlayedNextRef.current = false;
+                // 일시정지 상태로 전환
+                usePlayerStore.getState().pause().catch(err => {
+                  console.error('Failed to pause after last song:', err);
+                });
+              }
+            }
+          }, 100);
+        }
+      }
+    }, 500); // 500ms마다 확인
+    
+    return () => clearInterval(checkInterval);
+  }, [isPlaying, currentSong, duration, playNext, playSong]);
 
   const checkMarquee = () => {
     if (titleContainerRef.current && titleTextRef.current) {
