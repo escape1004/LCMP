@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import React from 'react';
-import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { useFolderStore } from '../stores/folderStore';
 import { usePlaylistStore } from '../stores/playlistStore';
 import { useSongStore } from '../stores/songStore';
@@ -63,7 +62,7 @@ export const PlaylistView = () => {
   const [isLoadingSize, setIsLoadingSize] = useState(false);
   
   // 컬럼 설정
-  const { visibleColumns, columnWidths, sortColumn, sortOrder, loadColumns, loadColumnWidths, setColumnWidth, toggleSort, reorderColumns, isLoading: isLoadingColumns } = useTableColumnsStore();
+  const { visibleColumns, columnWidths, sortColumn, sortOrder, loadColumns, loadColumnWidths, setColumnWidth, toggleSort, isLoading: isLoadingColumns } = useTableColumnsStore();
   const [isColumnDialogOpen, setIsColumnDialogOpen] = useState(false);
   const [resizingColumn, setResizingColumn] = useState<ColumnKey | null>(null);
   const [resizeStartX, setResizeStartX] = useState(0);
@@ -378,21 +377,6 @@ export const PlaylistView = () => {
     return '재생 목록';
   };
 
-  // 컬럼 드래그 핸들러
-  const handleColumnDragEnd = (result: DropResult) => {
-    if (!result.destination) return;
-    
-    const sourceIndex = result.source.index;
-    const destinationIndex = result.destination.index;
-    
-    if (sourceIndex === destinationIndex) return;
-    
-    const newOrder = Array.from(visibleColumns);
-    const [removed] = newOrder.splice(sourceIndex, 1);
-    newOrder.splice(destinationIndex, 0, removed);
-    
-    reorderColumns(newOrder);
-  };
 
   // 컨텍스트 메뉴 핸들러
   const handleSongContextMenu = (e: React.MouseEvent, song: Song) => {
@@ -532,125 +516,100 @@ export const PlaylistView = () => {
             <div className="text-text-muted text-sm">노래를 추가해주세요</div>
           </div>
         ) : (
-          <DragDropContext onDragEnd={handleColumnDragEnd}>
-            <div 
-              className="flex-1 flex flex-col overflow-hidden bg-bg-primary" 
-              ref={setTableContainerRef}
-            >
-              <div className={`flex-1 overflow-y-auto min-h-0 ${needsHorizontalScroll ? 'overflow-x-auto' : 'overflow-x-hidden'}`}>
-                <table style={{ 
-                  tableLayout: 'fixed', 
-                  width: (visibleColumns && visibleColumns.length > 0 && tempColumnWidths) 
-                    ? visibleColumns.reduce((sum, key) => sum + (tempColumnWidths[key] || 150), 0) + 'px'
-                    : '100%',
-                  borderCollapse: 'collapse'
-                }} className="bg-bg-primary">
-              <thead className="sticky top-0 bg-bg-primary border-b border-border z-10">
-                <tr className="bg-bg-primary relative" style={{ position: 'relative' }}>
-                  <Droppable droppableId="columns" direction="horizontal">
-                    {(provided) => (
-                      <>
-                        {visibleColumns.map((columnKey, index) => {
-                          const column = AVAILABLE_COLUMNS.find(c => c.key === columnKey);
-                          if (!column) return null;
-                          
-                          const width = tempColumnWidths[columnKey] || 150;
-                          const isSortable = column.sortable !== false;
-                          const isSorted = sortColumn === columnKey;
-                          const isAlbumArt = columnKey === 'album_art';
-                          const isLastColumn = index === visibleColumns.length - 1;
-                          const sortIcon = isSorted && sortOrder === 'asc' 
-                            ? <ArrowUp className="w-3 h-3 ml-1 text-white" />
-                            : isSorted && sortOrder === 'desc'
-                            ? <ArrowDown className="w-3 h-3 ml-1 text-white" />
-                            : null;
-                          
-                          return (
-                            <Draggable
-                              key={columnKey}
-                              draggableId={columnKey}
-                              index={index}
-                              isDragDisabled={columnKey === 'album_art'} // 앨범아트는 드래그 불가
-                            >
-                              {(provided, snapshot) => (
-                                <th
-                                  ref={provided.innerRef}
-                                  {...provided.draggableProps}
-                                  style={{
-                                    ...provided.draggableProps.style,
-                                    width: `${width}px`,
-                                    minWidth: `${width}px`,
-                                    maxWidth: `${width}px`,
-                                  }}
-                                  className={`text-left px-4 py-3 text-xs font-semibold text-text-muted uppercase tracking-wide select-none relative overflow-hidden text-ellipsis whitespace-nowrap transition-colors ${
-                                    isAlbumArt ? 'bg-bg-primary group-hover:bg-hover' : ''
-                                  } ${
-                                    snapshot.isDragging ? 'bg-hover' : ''
-                                  } ${
-                                    isSortable ? 'cursor-pointer hover:bg-hover' : 'cursor-default'
-                                  }`}
-                                  onClick={() => {
-                                    if (isSortable) {
-                                      toggleSort(columnKey);
-                                    }
-                                  }}
-                                  onContextMenu={(e) => {
-                                    e.preventDefault();
-                                    setIsColumnDialogOpen(true);
-                                  }}
-                                >
-                                  <div
-                                    {...provided.dragHandleProps}
-                                    className="flex items-center justify-between min-w-0"
-                                  >
-                                    <div className="flex items-center min-w-0">
-                                      <span className="truncate">{column.label}</span>
-                                      {sortIcon}
-                                    </div>
-                                  </div>
-                                  {/* 리사이즈 핸들 (앨범아트 제외) */}
-                                  {!isAlbumArt && (
-                                    <div
-                                      className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-accent transition-colors group"
-                                      onMouseDown={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        handleResizeStart(e, columnKey);
-                                      }}
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                      }}
-                                      style={{ zIndex: 10 }}
-                                    >
-                                      <div className="absolute top-0 right-0 w-0.5 h-full bg-transparent group-hover:bg-accent" />
-                                    </div>
-                                  )}
-                                </th>
-                              )}
-                            </Draggable>
-                          );
-                        })}
-                        {/* 헤더 빈 공간을 채우는 실제 셀 */}
-                        <th 
-                          className="bg-bg-primary border-b border-border"
-                          style={{
-                            position: 'absolute',
-                            left: '100%',
-                            top: 0,
-                            bottom: 0,
-                            width: 'var(--empty-space-width, 0px)',
-                            padding: 0,
-                            margin: 0,
-                            height: '100%'
+          <div 
+            className="flex-1 flex flex-col overflow-hidden bg-bg-primary" 
+            ref={setTableContainerRef}
+          >
+            <div className={`flex-1 overflow-y-auto min-h-0 ${needsHorizontalScroll ? 'overflow-x-auto' : 'overflow-x-hidden'}`}>
+              <table style={{ 
+                tableLayout: 'fixed', 
+                width: (visibleColumns && visibleColumns.length > 0 && tempColumnWidths) 
+                  ? visibleColumns.reduce((sum, key) => sum + (tempColumnWidths[key] || 150), 0) + 'px'
+                  : '100%',
+                borderCollapse: 'collapse'
+              }} className="bg-bg-primary">
+            <thead className="sticky top-0 bg-bg-primary border-b border-border z-10">
+              <tr className="bg-bg-primary relative" style={{ position: 'relative' }}>
+                {visibleColumns.map((columnKey, index) => {
+                  const column = AVAILABLE_COLUMNS.find(c => c.key === columnKey);
+                  if (!column) return null;
+                  
+                  const width = tempColumnWidths[columnKey] || 150;
+                  const isSortable = column.sortable !== false;
+                  const isSorted = sortColumn === columnKey;
+                  const isAlbumArt = columnKey === 'album_art';
+                  const sortIcon = isSorted && sortOrder === 'asc' 
+                    ? <ArrowUp className="w-3 h-3 ml-1 text-white" />
+                    : isSorted && sortOrder === 'desc'
+                    ? <ArrowDown className="w-3 h-3 ml-1 text-white" />
+                    : null;
+                  
+                  return (
+                    <th
+                      key={columnKey}
+                      style={{
+                        width: `${width}px`,
+                        minWidth: `${width}px`,
+                        maxWidth: `${width}px`,
+                      }}
+                      className={`text-left px-4 py-3 text-xs font-semibold text-text-muted uppercase tracking-wide select-none relative overflow-hidden text-ellipsis whitespace-nowrap transition-colors ${
+                        isAlbumArt ? 'bg-bg-primary group-hover:bg-hover' : ''
+                      } ${
+                        isSortable ? 'cursor-pointer hover:bg-hover' : 'cursor-default'
+                      }`}
+                      onClick={() => {
+                        if (isSortable) {
+                          toggleSort(columnKey);
+                        }
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setIsColumnDialogOpen(true);
+                      }}
+                    >
+                      <div className="flex items-center justify-between min-w-0">
+                        <div className="flex items-center min-w-0">
+                          <span className="truncate">{column.label}</span>
+                          {sortIcon}
+                        </div>
+                      </div>
+                      {/* 리사이즈 핸들 (앨범아트 제외) */}
+                      {!isAlbumArt && (
+                        <div
+                          className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-accent transition-colors group"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleResizeStart(e, columnKey);
                           }}
-                        />
-                        {provided.placeholder}
-                      </>
-                    )}
-                  </Droppable>
-                </tr>
-              </thead>
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                          style={{ zIndex: 10 }}
+                        >
+                          <div className="absolute top-0 right-0 w-0.5 h-full bg-transparent group-hover:bg-accent" />
+                        </div>
+                      )}
+                    </th>
+                  );
+                })}
+                {/* 헤더 빈 공간을 채우는 실제 셀 */}
+                <th 
+                  className="bg-bg-primary border-b border-border"
+                  style={{
+                    position: 'absolute',
+                    left: '100%',
+                    top: 0,
+                    bottom: 0,
+                    width: 'var(--empty-space-width, 0px)',
+                    padding: 0,
+                    margin: 0,
+                    height: '100%'
+                  }}
+                />
+              </tr>
+            </thead>
             <tbody className="bg-bg-primary">
               {sortedSongs.map((song) => {
                 const hasWaveform = song.waveform_data !== null && song.waveform_data !== '';
@@ -784,7 +743,6 @@ export const PlaylistView = () => {
           </table>
               </div>
             </div>
-          </DragDropContext>
         )}
       </div>
       
