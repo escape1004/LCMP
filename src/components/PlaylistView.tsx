@@ -721,7 +721,7 @@ export const PlaylistView = () => {
                     className={`border-b border-border transition-colors duration-150 group bg-bg-primary relative ${
                       hasWaveform
                         ? 'hover:bg-hover'
-                        : 'opacity-50 cursor-not-allowed bg-bg-secondary'
+                        : 'opacity-50 bg-bg-secondary'
                     }`}
                     style={{
                       position: 'relative'

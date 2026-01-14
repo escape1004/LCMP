@@ -77,7 +77,7 @@ export const ColumnSelectorDialog = ({ open, onOpenChange }: ColumnSelectorDialo
                 <label
                   key={column.key}
                   className={`flex items-center space-x-2 p-2 rounded hover:bg-hover ${
-                    isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                    isDisabled ? 'opacity-50' : 'cursor-pointer'
                   }`}
                 >
                   <input

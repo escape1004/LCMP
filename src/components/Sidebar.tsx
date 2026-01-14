@@ -5,6 +5,7 @@ import { useFolderStore } from "../stores/folderStore";
 import { usePlaylistStore } from "../stores/playlistStore";
 import { FolderModal } from "./FolderModal";
 import { PlaylistModal } from "./PlaylistModal";
+import { Tooltip } from "./ui/tooltip";
 
 export const Sidebar = () => {
   const {
@@ -176,13 +177,14 @@ export const Sidebar = () => {
             <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide">
               폴더
             </h2>
-          <button
-            onClick={handleAddFolder}
-            className="p-1 hover:bg-hover rounded transition-colors"
-            title="폴더 추가"
-          >
-            <Plus size={14} className="text-text-muted" />
-          </button>
+          <Tooltip content="폴더 추가">
+            <button
+              onClick={handleAddFolder}
+              className="p-1 hover:bg-hover rounded transition-colors"
+            >
+              <Plus size={14} className="text-text-muted" />
+            </button>
+          </Tooltip>
         </div>
         </div>
         <div className="flex-1 overflow-y-auto">
@@ -249,13 +251,14 @@ export const Sidebar = () => {
             <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide">
               플레이리스트
             </h2>
-          <button
-            onClick={handleCreatePlaylist}
-            className="p-1 hover:bg-hover rounded transition-colors"
-            title="플레이리스트 추가"
-          >
-            <Plus size={14} className="text-text-muted" />
-          </button>
+          <Tooltip content="플레이리스트 추가">
+            <button
+              onClick={handleCreatePlaylist}
+              className="p-1 hover:bg-hover rounded transition-colors"
+            >
+              <Plus size={14} className="text-text-muted" />
+            </button>
+          </Tooltip>
         </div>
         </div>
         <div className="flex-1 overflow-y-auto">

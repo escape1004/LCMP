@@ -207,7 +207,7 @@ export const PlaylistModal = ({
                       </Button>
                       <Button
                         variant="destructive"
-                        className="flex-1 bg-danger hover:bg-danger/90 text-white disabled:bg-danger/50 disabled:text-white/50 disabled:cursor-not-allowed"
+                        className="flex-1 bg-danger hover:bg-danger/90 text-white disabled:bg-danger/50 disabled:text-white/50"
                         disabled={deleteInput !== "플레이리스트를 삭제하겠습니다" || isDeleting}
                         onClick={async () => {
                           try {

@@ -82,7 +82,7 @@ export const SongContextMenu = ({
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 bg-bg-sidebar border border-border rounded-md shadow-lg py-1 min-w-[180px]"
+      className="fixed z-50 bg-bg-sidebar border border-border rounded-md shadow-lg py-1 w-fit"
       style={{
         left: `${x}px`,
         top: `${y}px`,
@@ -93,7 +93,7 @@ export const SongContextMenu = ({
           onAddToQueue(song);
           onClose();
         }}
-        className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-hover transition-colors"
+        className="block w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-hover transition-colors whitespace-nowrap"
       >
         대기열 추가
       </button>
@@ -102,7 +102,7 @@ export const SongContextMenu = ({
           onAddToPlaylist(song);
           onClose();
         }}
-        className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-hover transition-colors"
+        className="block w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-hover transition-colors whitespace-nowrap"
       >
         플레이리스트 추가
       </button>
@@ -111,7 +111,7 @@ export const SongContextMenu = ({
           // 추후 개발 예정
           onClose();
         }}
-        className="w-full px-3 py-2 text-left text-sm text-text-muted hover:bg-hover transition-colors cursor-not-allowed"
+        className="w-full px-3 py-2 text-left text-sm text-text-muted hover:bg-hover transition-colors whitespace-nowrap"
         disabled
       >
         태그 추가
@@ -122,7 +122,7 @@ export const SongContextMenu = ({
           onEditMetadata(song);
           onClose();
         }}
-        className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-hover transition-colors"
+        className="block w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-hover transition-colors whitespace-nowrap"
       >
         메타데이터 수정
       </button>

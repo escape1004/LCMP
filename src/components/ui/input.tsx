@@ -14,7 +14,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           "flex h-10 w-full rounded-md border border-border bg-bg-sidebar px-3 py-1 text-sm text-text-primary shadow-sm transition-colors",
           "placeholder:text-text-muted",
           "focus-visible:outline-none",
-          "disabled:cursor-not-allowed disabled:opacity-50",
+          "disabled:opacity-50",
           type === "number" && "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
           className
         )}
