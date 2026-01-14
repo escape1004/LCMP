@@ -5,7 +5,6 @@ use std::thread;
 use std::time::Duration;
 use std::sync::mpsc;
 use std::collections::VecDeque;
-use std::mem;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::{MediaSourceStream, MediaSourceStreamOptions};
 use symphonia::core::meta::MetadataOptions;
@@ -483,6 +482,10 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
         const MAX_PACKET_SCAN: usize = 10000;
         // ✅ 리샘플러 고정 입력 프레임 크기
         const RS_IN_FRAMES: usize = 8192;
+        // ✅ pending 최대 길이 상한 (메모리 폭증 방지)
+        const PENDING_MAX: usize = RS_IN_FRAMES * 20; // 약 20블록 분량
+        // ✅ batch_samples 최대 크기 (한 번에 보내는 샘플 수 제한)
+        const BATCH_MAX_SAMPLES: usize = 16384 * 2; // 16384 프레임 * 2채널 (LR)
 
         let mut batch_samples: Vec<f32> = Vec::new();
         let mut resampler: Option<SincFixedIn<f32>> = None;
@@ -590,10 +593,10 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                                 }
                             }
 
-                            // ✅ clone 제거: EOF에서도 swap 사용
+                            // ✅ clone 제거: EOF에서도 drain 사용
                             if !batch_samples.is_empty() {
                                 let mut out = Vec::new();
-                                std::mem::swap(&mut out, &mut batch_samples);
+                                out.extend(batch_samples.drain(..));
                                 let _ = tx.send(out);
                             }
                             break 'decode_loop;
@@ -664,6 +667,18 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
 
                             pending_l.push_back(l);
                             pending_r.push_back(r);
+                            
+                            // ✅ (A) pending 최대 길이 상한 체크 (메모리 폭증 방지)
+                            if pending_l.len() > PENDING_MAX || pending_r.len() > PENDING_MAX {
+                                // 가장 오래된 샘플 drop
+                                while pending_l.len() > PENDING_MAX {
+                                    pending_l.pop_front();
+                                }
+                                while pending_r.len() > PENDING_MAX {
+                                    pending_r.pop_front();
+                                }
+                                eprintln!("Warning: pending buffer exceeded limit, dropping oldest samples");
+                            }
                         }
 
                         // ✅ 리샘플링 처리
@@ -727,7 +742,8 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                                 }
                             }
                         } else {
-                            // 리샘플링 없음: pending에서 바로 batch_samples로
+                            // ✅ (B) 리샘플링 없음: pending에서 batch_samples로
+                            // (batch_samples는 루프 끝에서 최대 크기로 잘라서 여러 번 전송)
                             while let (Some(l), Some(r)) = (pending_l.pop_front(), pending_r.pop_front()) {
                                 batch_samples.push(l);
                                 batch_samples.push(r);
@@ -747,13 +763,16 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
             }
 
             // ✅ clone 제거: swap으로 성능 개선
-            if !batch_samples.is_empty() {
-                let samples_count = batch_samples.len();
-                let mut out = Vec::new();
-                mem::swap(&mut out, &mut batch_samples);
+            // ✅ (B) batch_samples가 최대 크기를 넘으면 여러 번 전송
+            while !batch_samples.is_empty() {
+                let send_count = batch_samples.len().min(BATCH_MAX_SAMPLES);
+                let mut out = Vec::with_capacity(send_count);
+                
+                // 앞에서부터 최대 크기만큼만 전송 (drain 사용)
+                out.extend(batch_samples.drain(..send_count));
+                
                 if tx.send(out).is_ok() {
-                    sent_samples += samples_count as u64;
-                    // batch_samples는 이미 swap으로 비워짐
+                    sent_samples += send_count as u64;
                 } else {
                     // 수신자가 없음: 재생 중지
                     break 'decode_loop;
