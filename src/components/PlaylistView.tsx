@@ -9,8 +9,9 @@ import { useTableColumnsStore, AVAILABLE_COLUMNS, ColumnKey } from '../stores/ta
 import { Song } from '../types';
 import { invoke } from '@tauri-apps/api/tauri';
 import { ColumnSelectorDialog } from './ColumnSelectorDialog';
-import { ArrowUp, ArrowDown, Play } from 'lucide-react';
+import { ArrowUp, ArrowDown, Play, Search, X } from 'lucide-react';
 import { Tooltip } from './ui/tooltip';
+import { Input } from './ui/input';
 
 const formatDuration = (seconds: number | null): string => {
   if (seconds === null || seconds === undefined) return '--:--';
@@ -69,6 +70,10 @@ export const PlaylistView = () => {
   
   // 임시 컬럼 너비 상태 (드래그 중에만 사용)
   const [tempColumnWidths, setTempColumnWidths] = useState<Record<ColumnKey, number>>(columnWidths);
+  
+  // 검색 기능
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchField, setSearchField] = useState<ColumnKey | 'all'>('all');
   
   // 컬럼 설정 로드 (앱 시작 시 한 번만)
   useEffect(() => {
@@ -176,6 +181,9 @@ export const PlaylistView = () => {
     } else {
       clearSongs();
     }
+    // 폴더나 플레이리스트 변경 시 검색어와 필터 초기화
+    setSearchQuery('');
+    setSearchField('all');
   }, [selectedFolderId, selectedPlaylistId, loadSongsByFolder, loadSongsByPlaylist, clearSongs]);
 
   // 웨이폼 생성 상태 주기적으로 확인
@@ -191,73 +199,126 @@ export const PlaylistView = () => {
   }, [checkGeneratingWaveform]);
 
 
-  // 정렬된 노래 목록
+  // 검색 및 정렬된 노래 목록
   const sortedSongs = useMemo(() => {
-    if (!sortColumn || !sortOrder) {
-      return songs;
+    let filtered = [...songs];
+
+    // 검색 필터링
+    if (searchQuery.trim()) {
+      filtered = filtered.filter((song) => {
+        const query = searchQuery.toLowerCase().trim();
+        
+        if (searchField === 'all') {
+          // 모든 필드에서 검색
+          return (
+            (song.title?.toLowerCase().includes(query)) ||
+            (song.artist?.toLowerCase().includes(query)) ||
+            (song.album?.toLowerCase().includes(query)) ||
+            (song.genre?.toLowerCase().includes(query)) ||
+            (song.file_path?.toLowerCase().includes(query)) ||
+            (song.year?.toString().includes(query)) ||
+            (song.file_path.split(/[/\\]/).pop()?.toLowerCase().includes(query))
+          );
+        } else {
+          // 특정 필드에서만 검색
+          let fieldValue: string | number | null = null;
+          switch (searchField) {
+            case 'title':
+              fieldValue = song.title;
+              break;
+            case 'artist':
+              fieldValue = song.artist;
+              break;
+            case 'album':
+              fieldValue = song.album;
+              break;
+            case 'genre':
+              fieldValue = song.genre;
+              break;
+            case 'year':
+              fieldValue = song.year;
+              break;
+            case 'file_name':
+              fieldValue = song.file_path.split(/[/\\]/).pop() || null;
+              break;
+            case 'file_path':
+              fieldValue = song.file_path;
+              break;
+            default:
+              return true;
+          }
+          
+          if (fieldValue === null) return false;
+          return fieldValue.toString().toLowerCase().includes(query);
+        }
+      });
     }
 
-    const sorted = [...songs];
-    sorted.sort((a, b) => {
-      let aValue: any;
-      let bValue: any;
+    // 정렬
+    if (sortColumn && sortOrder) {
+      filtered.sort((a, b) => {
+        let aValue: any;
+        let bValue: any;
 
-      switch (sortColumn) {
-        case 'title':
-          aValue = a.title || '';
-          bValue = b.title || '';
-          break;
-        case 'artist':
-          aValue = a.artist || '';
-          bValue = b.artist || '';
-          break;
-        case 'album':
-          aValue = a.album || '';
-          bValue = b.album || '';
-          break;
-        case 'duration':
-          aValue = a.duration ?? 0;
-          bValue = b.duration ?? 0;
-          break;
-        case 'year':
-          aValue = a.year ?? 0;
-          bValue = b.year ?? 0;
-          break;
-        case 'genre':
-          aValue = a.genre || '';
-          bValue = b.genre || '';
-          break;
-        case 'file_name':
-          aValue = a.file_path.split(/[/\\]/).pop() || '';
-          bValue = b.file_path.split(/[/\\]/).pop() || '';
-          break;
-        case 'file_path':
-          aValue = a.file_path || '';
-          bValue = b.file_path || '';
-          break;
-        case 'created_at':
-          aValue = new Date(a.created_at).getTime();
-          bValue = new Date(b.created_at).getTime();
-          break;
-        case 'updated_at':
-          aValue = new Date(a.updated_at).getTime();
-          bValue = new Date(b.updated_at).getTime();
-          break;
-        default:
-          return 0;
-      }
+        switch (sortColumn) {
+          case 'title':
+            aValue = a.title || '';
+            bValue = b.title || '';
+            break;
+          case 'artist':
+            aValue = a.artist || '';
+            bValue = b.artist || '';
+            break;
+          case 'album':
+            aValue = a.album || '';
+            bValue = b.album || '';
+            break;
+          case 'duration':
+            aValue = a.duration ?? 0;
+            bValue = b.duration ?? 0;
+            break;
+          case 'year':
+            aValue = a.year ?? 0;
+            bValue = b.year ?? 0;
+            break;
+          case 'genre':
+            aValue = a.genre || '';
+            bValue = b.genre || '';
+            break;
+          case 'file_name':
+            const fileNameA = a.file_path.split(/[/\\]/).pop() || '';
+            const fileNameB = b.file_path.split(/[/\\]/).pop() || '';
+            aValue = fileNameA;
+            bValue = fileNameB;
+            break;
+          case 'file_path':
+            aValue = a.file_path || '';
+            bValue = b.file_path || '';
+            break;
+          case 'created_at':
+            aValue = new Date(a.created_at).getTime();
+            bValue = new Date(b.created_at).getTime();
+            break;
+          case 'updated_at':
+            aValue = new Date(a.updated_at).getTime();
+            bValue = new Date(b.updated_at).getTime();
+            break;
+          default:
+            return 0;
+        }
 
-      if (typeof aValue === 'string' && typeof bValue === 'string') {
-        return sortOrder === 'asc' 
-          ? aValue.localeCompare(bValue, 'ko', { numeric: true })
-          : bValue.localeCompare(aValue, 'ko', { numeric: true });
-      } else {
-        return sortOrder === 'asc' ? aValue - bValue : bValue - aValue;
-      }
-    });
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
+          return sortOrder === 'asc' 
+            ? aValue.localeCompare(bValue, 'ko', { numeric: true })
+            : bValue.localeCompare(aValue, 'ko', { numeric: true });
+        } else {
+          return sortOrder === 'asc' ? aValue - bValue : bValue - aValue;
+        }
+      });
+    }
 
-    return sorted;
-  }, [songs, sortColumn, sortOrder]);
+    return filtered;
+  }, [songs, searchQuery, searchField, sortColumn, sortOrder]);
 
   // 전체 재생 시간 계산
   const totalDuration = useMemo(() => {
@@ -341,7 +402,7 @@ export const PlaylistView = () => {
   return (
     <div className="flex-1 flex flex-col bg-bg-primary min-h-0">
       {/* Header */}
-      <div className="flex-shrink-0 p-4 border-b border-border">
+      <div className="flex-shrink-0 px-4 pt-4 pb-2">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-text-primary">
             {getTitle()}
@@ -373,11 +434,58 @@ export const PlaylistView = () => {
         </div>
       </div>
 
+      {/* Search Bar */}
+      <div className="flex-shrink-0 px-4 pt-0 pb-4 border-b border-border">
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-text-muted" />
+            <Input
+              type="text"
+              placeholder="검색..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className={`pl-9 ${searchQuery ? 'pr-9' : ''}`}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-text-muted hover:text-text-primary transition-colors"
+                type="button"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          <select
+            value={searchField}
+            onChange={(e) => setSearchField(e.target.value as ColumnKey | 'all')}
+            className="h-10 px-3 rounded-md border border-border bg-bg-sidebar text-sm text-text-primary focus:outline-none"
+          >
+            <option value="all">전체</option>
+            {AVAILABLE_COLUMNS.filter(col => 
+              col.key !== 'album_art' && 
+              col.key !== 'duration' && 
+              col.key !== 'file_path' && 
+              col.key !== 'created_at' && 
+              col.key !== 'updated_at'
+            ).map((column) => (
+              <option key={column.key} value={column.key}>
+                {column.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {/* Song List Table */}
       <div className="flex-1 flex flex-col overflow-hidden min-h-0">
         {isLoading ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-text-muted text-sm">로딩 중...</div>
+          </div>
+        ) : searchQuery.trim() && sortedSongs.length === 0 ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-text-muted text-sm">검색 결과가 없습니다</div>
           </div>
         ) : songs.length === 0 ? (
           <div className="flex items-center justify-center h-full">

@@ -53,7 +53,7 @@ const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = {
 };
 
 export const useTableColumnsStore = create<TableColumnsStore>((set, get) => ({
-  visibleColumns: ['album_art', 'title', 'artist', 'album', 'duration'], // 기본값 (앨범아트는 항상 첫 번째)
+  visibleColumns: ['title', 'artist', 'album', 'duration'], // 기본값
   columnWidths: { ...DEFAULT_COLUMN_WIDTHS },
   sortColumn: null,
   sortOrder: null,
