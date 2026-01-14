@@ -164,14 +164,17 @@ pub async fn extract_waveform(file_path: String, samples: usize) -> Result<Vec<f
             let channels_count = audio_buf.spec().channels.count() as usize;
             
             // f32 버퍼로 변환
-            // AudioBuffer를 충분히 크게 생성 (에러 방지를 위해 실제 프레임 수의 2배)
-            let safe_frames = (frames * 2).max(4096); // 최소 4096 프레임 보장
-            let duration = symphonia::core::units::Duration::from(safe_frames as u64);
+            // 🔥 핵심: frames가 아니라 capacity로 dest를 만든다
+            // convert()는 frames가 아니라 capacity 기준으로 dest 용량이 충분한지 체크함
+            let spec = *audio_buf.spec();
+            let cap = audio_buf.capacity();
+            let duration = symphonia::core::units::Duration::from(cap as u64);
             let mut f32_buf = symphonia::core::audio::AudioBuffer::<f32>::new(
                 duration,
-                *audio_buf.spec()
+                spec
             );
             audio_buf.convert(&mut f32_buf);
+            // ✅ 이후 처리는 frames까지만 사용 (버퍼는 넉넉히 만들고, 실제 사용은 frames까지만)
             
             // duration을 모를 경우 동적으로 청크 크기 조정
             if duration_sec == 0.0 && sample_counter > 0 && sample_counter % 10000 == 0 {
@@ -289,9 +292,14 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
         .map_err(|e| format!("Failed to probe format: {}", e))?;
     
     // track 정보를 먼저 추출 (borrow 충돌 방지)
+    // ✅ 오디오 트랙 선택 개선: sample_rate/channels 있는 트랙 + 가장 긴 트랙 우선
+    // 첫 번째 유효한 코덱만 찾으면 비오디오 트랙(비디오/앨범아트 등)을 선택할 수 있음
     let track = probed.format.tracks()
         .iter()
-        .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+        .filter(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+        .filter(|t| t.codec_params.sample_rate.is_some()) // 샘플 레이트가 있는 트랙만
+        .filter(|t| t.codec_params.channels.is_some()) // 채널 정보가 있는 트랙만
+        .max_by_key(|t| t.codec_params.n_frames.unwrap_or(0)) // 가장 긴 트랙 우선
         .ok_or_else(|| "No valid audio track found".to_string())?;
     
     // track에서 필요한 정보를 먼저 추출
@@ -332,10 +340,9 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
     
     let target_sample_rate = default_config.sample_rate().0 as u32;
     
-    // 스테레오 출력을 보장하기 위해 채널 수를 명시적으로 설정
-    let channels = default_config.channels().max(2); // 최소 2채널 (스테레오)
-    let mut config = default_config.config();
-    config.channels = channels; // 스테레오 보장
+    // ✅ CPAL 채널 수는 절대 변경하지 않음 (출력 장치 채널 수 = 진리)
+    let config = default_config.config();
+    // config.channels 그대로 둠 (출력 장치 채널 수 유지)
     
     // 디버깅: 채널 수 확인
     eprintln!("Output channels: {}, Sample rate: {}", config.channels, config.sample_rate.0);
@@ -408,9 +415,10 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
     // 클로저로 이동할 변수들
     let _expected_duration_clone = expected_duration; // 현재 사용하지 않지만 향후 사용 가능
     let _target_sample_rate_clone = target_sample_rate;
-    let _track_id_clone = track_id; // 현재 사용하지 않지만 향후 사용 가능
+    let audio_track_id = track_id; // ✅ 오디오 트랙 ID (다른 트랙 패킷 스킵용)
     let codec_params_clone = codec_params.clone();
     let initial_packet_time_clone = initial_packet_time; // 초기화 Seek에서 읽은 첫 패킷의 타임스탬프
+    let needs_resampling_clone = needs_resampling; // EOF에서 리샘플러 flush를 위해 필요
     
     // 여러 패킷을 배치로 처리하여 효율성 향상
     thread::spawn(move || {
@@ -426,6 +434,13 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
         // current_packet_time은 참고용으로만 사용 (UI 표시용)
         let mut current_packet_time = initial_packet_time_clone; // 참고용 (UI 표시용)
         // ✅ samples_played는 출력 콜백에서만 증가 (정확한 재생 시간 추적)
+        let mut zero_frame_count = 0u32; // frames == 0 연속 카운트 (안전장치)
+        
+        // 디버깅 카운터: "진짜로 오디오 샘플이 0개도 안 나오는지" 확인용
+        let mut decoded_ok = 0u64;
+        let mut decoded_err = 0u64;
+        let mut sent_samples = 0u64;
+        let mut last_log = std::time::Instant::now(); // 주기 로그용
         
         loop {
             let should_stop = {
@@ -443,6 +458,12 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
             for _ in 0..BATCH_SIZE {
                 let packet = match format_reader.next_packet() {
                     Ok(packet) => {
+                        // 🔥 핵심: 오디오 트랙이 아니면 스킵 (앨범아트/비디오/자막 등)
+                        // Symphonia는 컨테이너에 트랙이 여러 개 있으면 모든 트랙의 패킷을 섞어서 줌
+                        if packet.track_id() != audio_track_id {
+                            continue; // 오디오 트랙이 아닌 패킷은 건너뛰기
+                        }
+                        
                         // 패킷 타임스탬프를 사용하여 재생 시간 업데이트 (리샘플링과 무관하게 정확함)
                         let packet_ts = packet.ts();
                         let mut packet_time = current_packet_time; // 기본값은 이전 값 유지
@@ -467,6 +488,34 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                         // ⛔ EOF에서 is_playing = false 설정하지 않음 (출력 스레드가 남은 샘플 소비 후 종료)
                         if io_err.kind() == std::io::ErrorKind::UnexpectedEof {
                             eprintln!("Decoder reached EOF (file fully consumed)");
+                            
+                            // 🔥🔥🔥 핵심: 리샘플러 flush (내부에 남아있는 샘플 배출)
+                            if needs_resampling_clone {
+                                if let Some(ref mut resampler) = resampler {
+                                    // Rubato는 빈 입력 + flush 신호로 내부 버퍼를 배출
+                                    // flush 플래그는 채널별로 전달 (2채널이므로 [true, true])
+                                    let flush_flags = [true, true];
+                                    let empty_input: Vec<Vec<f32>> = vec![vec![], vec![]]; // 빈 입력 (2채널)
+                                    if let Ok(output_channels) = resampler.process(&empty_input, Some(&flush_flags)) {
+                                        if !output_channels.is_empty() && !output_channels[0].is_empty() {
+                                            let frames = output_channels[0].len();
+                                            let mut flushed = Vec::with_capacity(frames * 2);
+                                            for i in 0..frames {
+                                                flushed.push(output_channels[0][i]);
+                                                flushed.push(
+                                                    if output_channels.len() > 1 {
+                                                        output_channels[1][i]
+                                                    } else {
+                                                        output_channels[0][i]
+                                                    }
+                                                );
+                                            }
+                                            batch_samples.extend(flushed);
+                                        }
+                                    }
+                                }
+                            }
+                            
                             // 남은 샘플이 있으면 전송
                             if !batch_samples.is_empty() {
                                 let _ = tx.send(batch_samples);
@@ -486,23 +535,52 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                 
                 match decoder.decode(&packet) {
                     Ok(decoded) => {
+                    decoded_ok += 1;
                     
                     let audio_buf = decoded;
                     let frames = audio_buf.frames();
+                    
+                    // ✅ frames == 0 패킷 처리: encoder delay / gapless / priming frames는 정상
+                    // 이런 패킷들은 EOF가 아니므로 그냥 skip하고 다음 패킷으로 넘어감
+                    if frames == 0 {
+                        // 🔥 정상적인 priming / delay 패킷
+                        // ⛔ batch_samples에 아무것도 안 넣음
+                        // ⛔ EOF 카운트 증가 ❌
+                        // ✅ 그냥 다음 패킷으로 넘어감
+                        zero_frame_count += 1;
+                        if zero_frame_count > 100 {
+                            // 🔥 너무 오래 지속되면 decoder reset (안전장치)
+                            eprintln!("Too many consecutive zero-frame packets, resetting decoder");
+                            decoder.reset();
+                            zero_frame_count = 0;
+                        }
+                        continue;
+                    }
+                    // 정상 프레임 수신 시 카운터 리셋
+                    zero_frame_count = 0;
+                    
                     let channels_count = audio_buf.spec().channels.count() as usize;
                     
                     // f32 버퍼로 변환 (재생용 - 원음 그대로 유지)
-                    // 원래 방식 사용: Duration은 프레임 수를 직접 받음
-                    let duration = symphonia::core::units::Duration::from(frames as u64);
+                    // ✅ 매 packet마다 재생성하여 프레임 크기 변화에 안전하게 대응
+                    // 🔥 핵심: frames가 아니라 capacity로 dest를 만든다
+                    // convert()는 frames가 아니라 capacity 기준으로 dest 용량이 충분한지 체크함
+                    let spec = *audio_buf.spec();
+                    let cap = audio_buf.capacity();
+                    let duration = symphonia::core::units::Duration::from(cap as u64);
                     let mut f32_buf = symphonia::core::audio::AudioBuffer::<f32>::new(
                         duration,
-                        *audio_buf.spec()
+                        spec
                     );
                     audio_buf.convert(&mut f32_buf);
+                    // ✅ 이후 처리는 frames까지만 사용 (버퍼는 넉넉히 만들고, 실제 사용은 frames까지만)
                     
                     if needs_resampling {
-                        // 리샘플러가 없으면 초기화 (첫 패킷에서)
+                        // 리샘플러가 없으면 초기화
+                        // ✅ 리샘플러는 첫 패킷 frames에 의존하지 않고 고정된 큰 값 사용
+                        // 첫 패킷이 작으면 리샘플러 내부 버퍼가 충분히 차지 않아 빈 output 반환
                         if resampler.is_none() {
+                            const RESAMPLER_MAX_INPUT: usize = 8192; // ✅ VBR MP3 + delay 패킷 많은 파일에 충분한 값
                             let params = SincInterpolationParameters {
                                 sinc_len: 256, // 높은 품질을 위한 긴 sinc 필터
                                 f_cutoff: 0.95,
@@ -510,12 +588,13 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                                 oversampling_factor: 256,
                                 window: WindowFunction::BlackmanHarris2,
                             };
+                            // ✅ 리샘플러는 무조건 2채널로 생성 (채널 수 고정)
                             if let Ok(r) = SincFixedIn::<f32>::new(
                                 resample_ratio,
                                 2.0,
                                 params,
-                                frames.max(1024),
-                                channels_count.max(2),
+                                RESAMPLER_MAX_INPUT, // ✅ 고정된 값 사용 (첫 패킷 frames에 의존하지 않음)
+                                2, // ❗ 항상 2채널
                             ) {
                                 resampler = Some(r);
                             }
@@ -523,39 +602,48 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                         
                         // 고품질 리샘플링 (FLAC 무손실 재생용)
                         if let Some(ref mut resampler) = resampler {
-                            // 채널별로 데이터 준비 (최소 2채널 보장)
-                            let target_channel_count = channels_count.max(2);
-                            let mut input_channels = Vec::new();
-                            for ch in 0..target_channel_count {
-                                let channel_data: Vec<f32> = if channels_count > ch {
-                                    f32_buf.chan(ch).iter().copied().collect()
-                                } else if ch == 1 && channels_count == 1 {
-                                    // 모노인 경우 오른쪽 채널에 왼쪽 채널 복사
-                                    f32_buf.chan(0).iter().copied().collect()
-                                } else {
-                                    vec![0.0; frames]
-                                };
-                                input_channels.push(channel_data);
-                            }
+                            // ✅ 내부 오디오 데이터는 항상 2채널로 통일
+                            // 모노인 경우 왼쪽 채널을 오른쪽에도 복사
+                            let left: Vec<f32> = if channels_count > 0 {
+                                f32_buf.chan(0).iter().take(frames).copied().collect()
+                            } else {
+                                vec![0.0; frames]
+                            };
+                            let right: Vec<f32> = if channels_count > 1 {
+                                f32_buf.chan(1).iter().take(frames).copied().collect()
+                            } else {
+                                // 모노인 경우 왼쪽 채널 복사
+                                left.clone()
+                            };
+                            
+                            // ✅ 리샘플러 입력은 무조건 2채널
+                            let input_channels = vec![left, right];
                             
                             // 리샘플링 수행
                             if let Ok(output_channels) = resampler.process(&input_channels, None) {
-                                // 인터리브된 형식으로 변환 (L, R, L, R, ...)
-                                let output_frames = output_channels[0].len();
-                                let output_channel_count = output_channels.len();
-                                let mut resampled = Vec::with_capacity(output_frames * 2);
-                                for frame_idx in 0..output_frames {
-                                    // 왼쪽 채널
-                                    resampled.push(output_channels[0][frame_idx]);
-                                    // 오른쪽 채널 (있으면 사용, 없으면 왼쪽 채널 복사)
-                                    if output_channel_count > 1 {
-                                        resampled.push(output_channels[1][frame_idx]);
-                                    } else {
+                                // ✅ 빈 output 처리: 리샘플러 내부 버퍼가 부족한 경우
+                                // 첫 패킷이 작으면 내부 버퍼가 충분히 차지 않아 빈 Vec 반환 가능
+                                // ⚠️ continue 제거: 빈 output이어도 다음 패킷에서 누적되면 결국 output 생성됨
+                                // 빈 output이면 이번 배치에는 아무것도 추가 안 함 (다음 패킷에서 누적)
+                                if !output_channels.is_empty() && !output_channels[0].is_empty() {
+                                    // 인터리브된 형식으로 변환 (L, R, L, R, ...)
+                                    let output_frames = output_channels[0].len();
+                                    let output_channel_count = output_channels.len();
+                                    let mut resampled = Vec::with_capacity(output_frames * 2);
+                                    for frame_idx in 0..output_frames {
+                                        // 왼쪽 채널
                                         resampled.push(output_channels[0][frame_idx]);
+                                        // 오른쪽 채널 (있으면 사용, 없으면 왼쪽 채널 복사)
+                                        if output_channel_count > 1 {
+                                            resampled.push(output_channels[1][frame_idx]);
+                                        } else {
+                                            resampled.push(output_channels[0][frame_idx]);
+                                        }
                                     }
+                                    batch_samples.extend(resampled);
+                                    // 실제로 batch_samples에 추가된 샘플 수 추적 (나중에 전송 시 카운트)
                                 }
-                                batch_samples.extend(resampled);
-                                // 실제로 batch_samples에 추가된 샘플 수 추적 (나중에 전송 시 카운트)
+                                // 빈 output이면 그냥 다음 패킷으로 진행 (continue 제거)
                             } else {
                                 // 리샘플링 실패 시 선형 보간으로 폴백
                                 let target_frames = (frames as f64 * resample_ratio) as usize;
@@ -614,8 +702,9 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                             }
                     } else {
                         // 리샘플링 불필요: 직접 복사 (원음 그대로 - FLAC 무손실 재생)
-                        // 스테레오 출력을 보장하기 위해 항상 2채널로 인터리브 (L, R, L, R, ...)
+                        // ✅ 내부 오디오 데이터는 항상 2채널로 통일 (LR 인터리브)
                         for frame_idx in 0..frames {
+                            // ✅ 원본 frames만 사용 (음질 손실 없음)
                             let left_sample = if channels_count > 0 {
                                 f32_buf.chan(0)[frame_idx]
                             } else {
@@ -627,6 +716,7 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                                 // 모노인 경우 오른쪽 채널에 왼쪽 채널 복사
                                 left_sample
                             };
+                            // 항상 LR 인터리브로 추가
                             batch_samples.push(left_sample);
                             batch_samples.push(right_sample);
                         }
@@ -635,15 +725,26 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                     }
                     Err(symphonia::core::errors::Error::ResetRequired) => {
                         // ResetRequired는 디코더 상태 문제이므로 reset 후 재시도
+                        decoded_err += 1;
                         decoder.reset();
                         continue;
                     }
                     Err(symphonia::core::errors::Error::DecodeError(_)) => {
                         // 🔥 깨진 프레임 스킵 (참고 코드 패턴: reset/seek 없이 단순히 continue)
+                        decoded_err += 1;
+                        // ✅ 처음 20개는 모두 출력, 이후는 200개마다 출력
+                        if decoded_err < 20 || decoded_err % 200 == 0 {
+                            eprintln!("decode_err#{}: DecodeError", decoded_err);
+                        }
                         continue; // 깨진 프레임 스킵하고 다음 패킷 시도
                     }
-                    Err(_) => {
+                    Err(e) => {
                         // 🔥 기타 디코딩 에러도 그냥 스킵 (참고 코드 패턴)
+                        decoded_err += 1;
+                        // ✅ 처음 20개는 모두 출력, 이후는 200개마다 출력
+                        if decoded_err < 20 || decoded_err % 200 == 0 {
+                            eprintln!("decode_err#{}: {:?}", decoded_err, e);
+                        }
                         continue; // 패킷 스킵하고 다음 패킷 시도
                     }
                 }
@@ -652,8 +753,10 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
             // ✅ 배치 전송: send를 사용하여 back-pressure 적용 (디코딩이 출력 속도에 동기화됨)
             // 버퍼가 꽉 차면 디코딩 스레드가 자동으로 대기하여 출력 속도에 맞춤
             if !batch_samples.is_empty() {
+                let samples_count = batch_samples.len();
                 match tx.send(batch_samples) {
                     Ok(_) => {
+                        sent_samples += samples_count as u64;
                         // 성공적으로 전송됨: 새로운 벡터 할당
                         batch_samples = Vec::new();
                     }
@@ -663,10 +766,21 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                     }
                 }
             }
+            
+            // ✅ 주기 로그: 2초마다 디코딩 진행 상황 확인 (무음 상황 진단용)
+            if last_log.elapsed() > Duration::from_secs(2) {
+                eprintln!(
+                    "[dbg] ok={}, err={}, sent={}, queue_hint={}",
+                    decoded_ok, decoded_err, sent_samples, batch_samples.len()
+                );
+                last_log = std::time::Instant::now();
+            }
         }
         
         // ✅ 루프 종료 시 채널을 명시적으로 닫기 (출력 스레드가 남은 샘플 소비 후 종료)
         eprintln!("Decoding thread: exiting, closing channel");
+        eprintln!("Debug stats: decoded_ok={}, decoded_err={}, sent_samples={}", 
+            decoded_ok, decoded_err, sent_samples);
         drop(tx);
         // ⛔ 디코딩 스레드에서 is_playing = false 설정하지 않음 (출력 스레드가 처리)
     });
@@ -719,11 +833,23 @@ where
     let min_buffer_size = sample_rate * 2 * channels; // 2초 분량
     let mut preload_attempts = 0;
     const MAX_PRELOAD_ATTEMPTS: usize = 100; // 프리로딩을 위해 더 많은 시도 허용
+    let mut silent_preload_loops = 0; // 빈 샘플 연속 카운트
     
     while sample_queue.len() < min_buffer_size && preload_attempts < MAX_PRELOAD_ATTEMPTS {
         match rx.try_recv() {
             Ok(samples) => {
+                if samples.is_empty() {
+                    // ✅ 빈 샘플 처리: encoder delay / priming frames로 인한 정상적인 무음 패킷
+                    silent_preload_loops += 1;
+                    if silent_preload_loops > 50 {
+                        // 🔥 더 이상 기다리지 말고 그냥 재생 시작
+                        // 초반 무음 패킷이 계속 오는 경우 무한 대기 방지
+                        break;
+                    }
+                    continue; // 빈 샘플은 스킵하고 다음 시도
+                }
                 sample_queue.extend(samples);
+                silent_preload_loops = 0; // 정상 샘플 수신 시 리셋
                 preload_attempts = 0; // 성공하면 카운터 리셋
             }
             Err(mpsc::TryRecvError::Empty) => {
@@ -789,36 +915,63 @@ where
                 }
             }
             
-            // 데이터 출력 (인터리브 형식: L, R, L, R, ...)
-            let mut output_idx = 0;
-            let mut samples_outputted = 0u64;
-            while output_idx < data.len() && !sample_queue.is_empty() {
-                let sample = sample_queue.pop_front().unwrap() * volume;
-                data[output_idx] = T::from_sample(sample);
+            // ✅ 데이터 출력: 내부는 항상 LR 인터리브, 출력 시에만 장치 채널 수에 맞게 복제
+            // 내부 데이터 구조: L, R, L, R, ... (항상 2채널)
+            // CPAL 출력: 장치 채널 수에 맞게 복제 (1채널→L만, 2채널→LR, 6채널→LRLRLR)
+            // ✅ 핵심: frame 단위로 LR을 정확히 1번만 pop, 채널 수는 복제만 함
+            let frames = data.len() / channels;
+            let mut lr_pairs_outputted = 0u64; // 실제 LR 쌍 수 추적
+            
+            for frame in 0..frames {
+                // 각 frame마다 LR 쌍을 정확히 1번만 pop
+                // ✅ 모노 출력(channels == 1)이면 1샘플만 소비, 스테레오 이상이면 LR 2샘플 소비
+                let (l, r) = if channels == 1 {
+                    // 🔥 모노 출력이면 1샘플만 소비 (L만 pop)
+                    let l = sample_queue.pop_front().unwrap_or(last_samples[0]);
+                    last_samples[0] = l;
+                    last_samples[1] = l; // 내부 상태 유지
+                    lr_pairs_outputted += 1;
+                    (l, l) // 모노이므로 R도 L과 동일
+                } else {
+                    // 스테레오 이상: LR 2샘플 소비
+                    if sample_queue.len() >= 2 {
+                        let l = sample_queue.pop_front().unwrap_or(last_samples[0]);
+                        let r = sample_queue.pop_front().unwrap_or(last_samples[1]);
+                        last_samples[0] = l;
+                        last_samples[1] = r;
+                        lr_pairs_outputted += 1;
+                        (l, r)
+                    } else if sample_queue.len() == 1 {
+                        // 마지막 샘플 하나만 남은 경우
+                        let l = sample_queue.pop_front().unwrap_or(last_samples[0]);
+                        last_samples[0] = l;
+                        last_samples[1] = l; // 모노인 경우
+                        lr_pairs_outputted += 1;
+                        (l, l)
+                    } else {
+                        // 버퍼 부족: 마지막 샘플 사용
+                        (last_samples[0], last_samples[1])
+                    }
+                };
                 
-                // 마지막 샘플 저장 (끊김 방지용, 채널별)
-                let channel_idx = output_idx % channels;
-                last_samples[channel_idx] = sample;
-                
-                output_idx += 1;
-                samples_outputted += 1;
+                // 각 채널에 LR 샘플 복제
+                for ch in 0..channels {
+                    let sample = if ch % 2 == 0 {
+                        l // 짝수 채널 = L
+                    } else {
+                        r // 홀수 채널 = R
+                    };
+                    data[frame * channels + ch] = T::from_sample(sample * volume);
+                }
             }
             
-            // 남은 공간 처리 (버퍼가 부족한 경우)
-            // 마지막 샘플을 반복하여 끊김을 최소화
-            while output_idx < data.len() {
-                let channel_idx = output_idx % channels;
-                let sample = last_samples[channel_idx] * volume;
-                data[output_idx] = T::from_sample(sample);
-                output_idx += 1;
-                samples_outputted += 1;
-            }
-            
-            // 실제로 출력된 샘플 수 업데이트 (일시정지 상태가 아닐 때만)
-            if samples_outputted > 0 {
+            // ✅ 실제로 출력된 샘플 수 업데이트 (LR 쌍 기준)
+            // CPAL은 장치 채널 수만큼 요구하지만, 내부는 LR 쌍 기준
+            if lr_pairs_outputted > 0 {
+                let actual_samples = lr_pairs_outputted * 2; // LR 쌍 * 2
                 let mut state_guard = state.lock().unwrap();
                 if !state_guard.is_paused {
-                    state_guard.samples_played += samples_outputted;
+                    state_guard.samples_played += actual_samples;
                 }
             }
         },
