@@ -35,7 +35,16 @@ export const ColumnSelectorDialog = ({ open, onOpenChange }: ColumnSelectorDialo
   };
 
   const handleSave = async () => {
-    await setColumns(tempColumns);
+    // 앨범아트가 있으면 항상 첫 번째로 이동
+    let finalColumns = [...tempColumns];
+    const albumArtIndex = finalColumns.indexOf('album_art');
+    if (albumArtIndex > 0) {
+      finalColumns.splice(albumArtIndex, 1);
+      finalColumns.unshift('album_art');
+    }
+    // 앨범아트가 없으면 그대로 유지 (첫 번째에 강제 추가하지 않음)
+    
+    await setColumns(finalColumns);
     onOpenChange(false);
   };
 
@@ -61,8 +70,8 @@ export const ColumnSelectorDialog = ({ open, onOpenChange }: ColumnSelectorDialo
             return (
               <label
                 key={column.key}
-                className={`flex items-center space-x-2 p-2 rounded hover:bg-hover cursor-pointer ${
-                  isDisabled ? 'opacity-50 cursor-not-allowed' : ''
+                className={`flex items-center space-x-2 p-2 rounded hover:bg-hover ${
+                  isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
                 }`}
               >
                 <input
@@ -72,7 +81,9 @@ export const ColumnSelectorDialog = ({ open, onOpenChange }: ColumnSelectorDialo
                   onChange={() => handleToggle(column.key)}
                   className="w-4 h-4 text-accent border-border rounded focus:ring-accent"
                 />
-                <span className="text-sm text-text-primary">{column.label}</span>
+                <span className="text-sm text-text-primary">
+                  {column.label}
+                </span>
               </label>
             );
           })}
