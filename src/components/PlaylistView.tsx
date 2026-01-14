@@ -384,11 +384,11 @@ export const PlaylistView = () => {
     reorderColumns(newOrder);
   };
 
-  // 현재 리스트의 모든 노래를 대기열에 추가 (웨이폼이 있는 노래만 추가)
+  // 현재 보이는 노래들(검색 결과 포함)을 대기열에 추가 (웨이폼이 있는 노래만 추가)
   const handleAddAllToQueue = async () => {
-    if (songs.length === 0) return;
+    if (sortedSongs.length === 0) return;
     // 웨이폼이 DB에 있는 노래만 필터링
-    const songsWithWaveform = songs.filter(
+    const songsWithWaveform = sortedSongs.filter(
       (song) => song.waveform_data !== null && song.waveform_data.trim() !== ''
     );
     if (songsWithWaveform.length === 0) return;
@@ -421,7 +421,7 @@ export const PlaylistView = () => {
               </span>
             )}
           </h2>
-          {songs.length > 0 && (
+          {sortedSongs.length > 0 && (
             <Tooltip content="모든 노래를 대기열에 추가">
               <button
                 onClick={handleAddAllToQueue}
