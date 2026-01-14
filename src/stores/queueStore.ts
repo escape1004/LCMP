@@ -9,6 +9,7 @@ interface QueueStore {
   isOpen: boolean;
   originalQueue: Song[]; // 셔플 전 원본 대기열
   addToQueue: (song: Song, position?: number) => void;
+  addMultipleToQueue: (songs: Song[]) => void;
   removeFromQueue: (index: number) => void;
   reorderQueue: (from: number, to: number) => void;
   clearQueue: () => void;
@@ -40,12 +41,16 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     }
     
     set({ queue: newQueue });
+  },
+
+  // 여러 노래를 한 번에 대기열에 추가 (성능 최적화)
+  addMultipleToQueue: (songs: Song[]) => {
+    if (songs.length === 0) return;
     
-    // 백그라운드에서 웨이폼 미리 추출 (순차적으로)
-    // 새로 추가된 곡부터 시작하여 대기열의 곡들을 순차적으로 처리
-    get().preloadWaveforms(newQueue).catch(err => {
-      console.error('Failed to preload waveforms:', err);
-    });
+    const state = get();
+    const newQueue = [...state.queue, ...songs];
+    
+    set({ queue: newQueue });
   },
   
   // 대기열의 곡들을 백그라운드에서 순차적으로 웨이폼 추출

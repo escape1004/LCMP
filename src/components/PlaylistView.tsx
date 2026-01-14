@@ -9,7 +9,8 @@ import { useTableColumnsStore, AVAILABLE_COLUMNS, ColumnKey } from '../stores/ta
 import { Song } from '../types';
 import { invoke } from '@tauri-apps/api/tauri';
 import { ColumnSelectorDialog } from './ColumnSelectorDialog';
-import { ArrowUp, ArrowDown } from 'lucide-react';
+import { ArrowUp, ArrowDown, Play } from 'lucide-react';
+import { Tooltip } from './ui/tooltip';
 
 const formatDuration = (seconds: number | null): string => {
   if (seconds === null || seconds === undefined) return '--:--';
@@ -53,7 +54,7 @@ export const PlaylistView = () => {
     setSongs([...storeSongs]);
   }, [storeSongs]);
   
-  const { playSong } = useQueueStore();
+  const { playSong, addMultipleToQueue, clearQueue, playSongAtIndex } = useQueueStore();
   const [totalSize, setTotalSize] = useState<number>(0);
   const [isLoadingSize, setIsLoadingSize] = useState(false);
   
@@ -322,27 +323,54 @@ export const PlaylistView = () => {
     reorderColumns(newOrder);
   };
 
+  // 현재 리스트의 모든 노래를 대기열에 추가 (웨이폼이 있는 노래만 추가)
+  const handleAddAllToQueue = async () => {
+    if (songs.length === 0) return;
+    // 웨이폼이 DB에 있는 노래만 필터링
+    const songsWithWaveform = songs.filter(
+      (song) => song.waveform_data !== null && song.waveform_data.trim() !== ''
+    );
+    if (songsWithWaveform.length === 0) return;
+    // 기존 대기열 초기화 후 새 노래들 추가
+    clearQueue();
+    addMultipleToQueue(songsWithWaveform);
+    // 첫 번째 곡 바로 재생
+    await playSongAtIndex(0);
+  };
+
   return (
     <div className="flex-1 flex flex-col bg-bg-primary min-h-0">
       {/* Header */}
       <div className="flex-shrink-0 p-4 border-b border-border">
-        <h2 className="text-lg font-semibold text-text-primary">
-          {getTitle()}
-          {(selectedFolderId !== null || selectedPlaylistId !== null) && (
-            <span className="text-xs text-text-muted font-normal ml-2">
-              {' '}
-              (
-              {isLoadingSize ? (
-                <span>계산 중...</span>
-              ) : (
-                <>
-                  {formatFileSize(totalSize)} / {formatDuration(totalDuration)}
-                </>
-              )}
-              )
-            </span>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-text-primary">
+            {getTitle()}
+            {(selectedFolderId !== null || selectedPlaylistId !== null) && (
+              <span className="text-xs text-text-muted font-normal ml-2">
+                {' '}
+                (
+                {isLoadingSize ? (
+                  <span>계산 중...</span>
+                ) : (
+                  <>
+                    {formatFileSize(totalSize)} / {formatDuration(totalDuration)}
+                  </>
+                )}
+                )
+              </span>
+            )}
+          </h2>
+          {songs.length > 0 && (
+            <Tooltip content="모든 노래를 대기열에 추가">
+              <button
+                onClick={handleAddAllToQueue}
+                className="w-8 h-8 rounded-full hover:bg-bg-sidebar flex items-center justify-center transition-colors duration-150"
+              >
+                <Play className="w-4 h-4 text-text-primary fill-text-primary ml-0.5" />
+              </button>
+            </Tooltip>
           )}
-        </h2>
+        </div>
       </div>
 
       {/* Song List Table */}
