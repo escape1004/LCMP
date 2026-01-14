@@ -5,6 +5,7 @@ use std::thread;
 use std::time::Duration;
 use std::sync::mpsc;
 use std::collections::VecDeque;
+use std::mem;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::{MediaSourceStream, MediaSourceStreamOptions};
 use symphonia::core::meta::MetadataOptions;
@@ -52,10 +53,9 @@ struct PlayerState {
     current_file: Option<String>,
     volume: f32,
     seek_time: Option<f64>,
-    should_stop: bool,
     samples_played: u64, // 실제로 오디오 스트림에서 출력된 샘플 수 (스테레오 샘플 수)
     rt_state: Option<Arc<RtState>>, // 실시간 상태 참조
-    stop_ack_tx: Option<mpsc::Sender<()>>, // ✅ 스레드 종료 확인용 ack 채널 (Sender)
+    // ✅ should_stop은 rt_state.should_stop만 사용 (중복 제거)
 }
 
 impl Default for PlayerState {
@@ -66,10 +66,8 @@ impl Default for PlayerState {
             current_file: None,
             volume: 0.5,
             seek_time: None,
-            should_stop: false,
             samples_played: 0,
             rt_state: None,
-            stop_ack_tx: None,
         }
     }
 }
@@ -209,13 +207,15 @@ pub async fn extract_waveform(file_path: String, samples: usize) -> Result<Vec<f
             // ✅ cap 상한 체크: 1~2초 분량으로 제한 (악성 파일 방어)
             let cap_limit = (sample_rate * 2).max(8192); // 2초 or 최소 8192
             
-            // cap이 상한을 넘으면 이 패킷 스킵 (방어)
+            // cap이 상한을 넘으면 부분 처리 (스킵하지 않고 limit만큼만 사용)
+            let safe_cap = cap.min(cap_limit);
             if cap > cap_limit {
-                eprintln!("Warning: waveform extraction - packet capacity {} exceeds limit {}, skipping", cap, cap_limit);
-                continue;
+                eprintln!("Warning: waveform extraction - packet capacity {} exceeds limit {}, using limit", cap, cap_limit);
             }
             
-            let duration = symphonia::core::units::Duration::from(cap as u64);
+            // ✅ safe_frames: frames가 safe_cap보다 클 수 있으므로 안전하게 제한
+            let safe_frames = frames.min(safe_cap);
+            let duration = symphonia::core::units::Duration::from(safe_cap as u64);
             let mut f32_buf = symphonia::core::audio::AudioBuffer::<f32>::new(
                 duration,
                 spec
@@ -229,8 +229,8 @@ pub async fn extract_waveform(file_path: String, samples: usize) -> Result<Vec<f
                 dynamic_chunk_size = (sample_counter / samples).max(1);
             }
             
-            // 모든 채널의 평균을 계산하여 모노로 변환하면서 RMS 누적
-            for frame_idx in 0..frames {
+            // 모든 채널의 평균을 계산하여 모노로 변환하면서 RMS 누적 (safe_frames만 사용)
+            for frame_idx in 0..safe_frames {
                 // 모노 변환
                 let mut sum = 0.0;
                 for ch in 0..channels_count {
@@ -279,11 +279,8 @@ pub async fn extract_waveform(file_path: String, samples: usize) -> Result<Vec<f
 
 #[tauri::command]
 pub async fn play_audio(file_path: String, volume: f32, seek_time: Option<f64>) -> Result<(), String> {
-    // ✅ 기존 재생 중지 및 완전 종료 대기 (ack 채널로 확실히 동기화)
+    // ✅ 기존 재생 중지 및 완전 종료 대기
     stop_audio().await.ok();
-    
-    // ✅ ack 채널 생성 (스레드 종료 확인용)
-    let (stop_ack_tx, _stop_ack_rx) = mpsc::channel::<()>();
     
     let rt_state = Arc::new(RtState::new(volume.max(0.0).min(1.0)));
     let state = Arc::new(Mutex::new(PlayerState {
@@ -292,10 +289,8 @@ pub async fn play_audio(file_path: String, volume: f32, seek_time: Option<f64>) 
         current_file: Some(file_path.clone()),
         volume: volume.max(0.0).min(1.0),
         seek_time,
-        should_stop: false,
         samples_played: 0,
         rt_state: Some(rt_state.clone()),
-        stop_ack_tx: Some(stop_ack_tx),
     }));
     
     *PLAYER_STATE.lock().map_err(|e| format!("Lock error: {}", e))? = Some(state.clone());
@@ -307,19 +302,14 @@ pub async fn play_audio(file_path: String, volume: f32, seek_time: Option<f64>) 
         }
     });
     
-    // _stop_ack_rx는 drop되면 자동으로 닫힘 (스레드가 종료되면 ack 전송 실패해도 괜찮음)
-    
     Ok(())
 }
 
 fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Result<(), String> {
-    // rt_state 및 stop_ack_tx 추출
-    let (rt_state, stop_ack_tx) = {
+    // rt_state 추출
+    let rt_state = {
         let state_guard = state.lock().map_err(|e| format!("Lock error: {}", e))?;
-        (
-            state_guard.rt_state.clone().ok_or_else(|| "RtState not initialized".to_string())?,
-            state_guard.stop_ack_tx.clone()
-        )
+        state_guard.rt_state.clone().ok_or_else(|| "RtState not initialized".to_string())?
     };
     let file = File::open(&file_path)
         .map_err(|e| format!("Failed to open file: {}", e))?;
@@ -520,16 +510,18 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                 let scan_start = std::time::Instant::now();
                 let scan_timeout = Duration::from_millis(500); // 500ms 동안 스캔
                 let mut attempts = 0usize;
+                let mut warned_timeout = false; // ✅ 경고는 루프당 1회만
+                let mut warned_max = false; // ✅ MAX_PACKET_SCAN 경고도 1회만
                 let packet = loop {
                     attempts += 1;
                     // 시간 기준 체크 (너무 많은 비오디오 패킷이 있어도 계속 시도)
-                    if scan_start.elapsed() > scan_timeout && attempts > 100 {
+                    if !warned_timeout && scan_start.elapsed() > scan_timeout && attempts > 100 {
                         eprintln!("Warning: audio packet scan timeout after {} attempts, continuing anyway", attempts);
-                        // 스레드를 종료하지 않고 계속 루프 (다음 패킷에서 찾을 수 있음)
+                        warned_timeout = true; // 한 번만 경고
                     }
-                    if attempts > MAX_PACKET_SCAN {
+                    if !warned_max && attempts > MAX_PACKET_SCAN {
                         eprintln!("Warning: exceeded MAX_PACKET_SCAN={}, but continuing scan", MAX_PACKET_SCAN);
-                        // 스레드 종료하지 않고 계속
+                        warned_max = true; // 한 번만 경고
                     }
 
                     match format_reader.next_packet() {
@@ -598,8 +590,11 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                                 }
                             }
 
+                            // ✅ clone 제거: EOF에서도 swap 사용
                             if !batch_samples.is_empty() {
-                                let _ = tx.send(batch_samples.clone());
+                                let mut out = Vec::new();
+                                std::mem::swap(&mut out, &mut batch_samples);
+                                let _ = tx.send(out);
                             }
                             break 'decode_loop;
                         }
@@ -644,12 +639,14 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                         }
 
                         let safe_cap = cap.min(cap_limit);
+                        // ✅ safe_frames: frames가 safe_cap보다 클 수 있으므로 안전하게 제한
+                        let safe_frames = frames.min(safe_cap);
                         let duration = symphonia::core::units::Duration::from(safe_cap as u64);
                         let mut f32_buf = symphonia::core::audio::AudioBuffer::<f32>::new(duration, spec);
                         audio_buf.convert(&mut f32_buf);
 
-                        // ✅ (C) 디코딩 후 샘플을 pending에 누적
-                        for fi in 0..frames {
+                        // ✅ (C) 디코딩 후 샘플을 pending에 누적 (safe_frames만 사용)
+                        for fi in 0..safe_frames {
                             let (l, r) = if channels_count > 2 {
                                 // 멀티채널 다운믹스 -> mono -> LR
                                 let mut sum = 0.0f32;
@@ -673,10 +670,12 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                         if needs_resampling {
                             // (B) resampler 초기화: RS_IN_FRAMES로 고정
                             if resampler.is_none() {
+                                // ✅ SincInterpolationType::Linear는 sinc 커널 계산 시 내부 보간 방식
+                                // (선형 보간 리샘플러가 아님 - sinc 기반 고품질 리샘플러)
                                 let params = SincInterpolationParameters {
                                     sinc_len: 256,
                                     f_cutoff: 0.95,
-                                    interpolation: SincInterpolationType::Linear,
+                                    interpolation: SincInterpolationType::Linear, // sinc 내부 테이블 보간 방식
                                     oversampling_factor: 256,
                                     window: WindowFunction::BlackmanHarris2,
                                 };
@@ -747,11 +746,16 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                 }
             }
 
+            // ✅ clone 제거: swap으로 성능 개선
             if !batch_samples.is_empty() {
                 let samples_count = batch_samples.len();
-                if tx.send(batch_samples.clone()).is_ok() {
+                let mut out = Vec::new();
+                mem::swap(&mut out, &mut batch_samples);
+                if tx.send(out).is_ok() {
                     sent_samples += samples_count as u64;
+                    // batch_samples는 이미 swap으로 비워짐
                 } else {
+                    // 수신자가 없음: 재생 중지
                     break 'decode_loop;
                 }
             }
@@ -799,13 +803,6 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
     // 재생이 끝나면 스트림 정리
     drop(stream);
     
-    // ✅ 스레드 종료 ack 전송 (stop_audio가 종료를 확인할 수 있도록)
-    // 주의: stop_ack_tx가 drop되면 Receiver가 닫히므로, 
-    // stop_audio에서 별도로 대기하지 않아도 됨 (단순히 확인용)
-    if let Some(ack_tx) = stop_ack_tx {
-        let _ = ack_tx.send(());
-    }
-    
     Ok(())
 }
 
@@ -823,7 +820,8 @@ where
     let sample_rate = config.sample_rate.0 as usize;
     let channels = config.channels as usize;
     let mut sample_queue: VecDeque<f32> = VecDeque::with_capacity(sample_rate * channels); // 채널 수 고려
-    let mut last_samples = vec![0.0f32; channels]; // 마지막 샘플 저장 (끊김 방지, 채널별)
+    // ✅ last_lr: 항상 2개 고정 (LR) - 모노 출력에서도 안전하게 접근
+    let mut last_lr = [0.0f32, 0.0f32]; // 마지막 LR 샘플 저장 (끊김 방지)
     
     // 재생 시작 전에 버퍼를 미리 채우기 (프리로딩)
     // 최소 버퍼 크기: 약 2초 분량 (AIMP처럼 안정적인 재생을 위해)
@@ -881,22 +879,20 @@ where
             
             let volume = rt_state.get_volume();
             
-            // 버퍼가 부족하면 채널에서 데이터 가져오기
-            // recv_timeout을 사용하여 타임아웃을 두어 데드락 방지
+            // ✅ 버퍼가 부족하면 채널에서 데이터 가져오기 (non-blocking)
+            // RT 콜백에서는 블로킹하지 않음 - try_recv만 사용
             while sample_queue.len() < data.len() {
-                match rx.recv_timeout(Duration::from_millis(100)) {
+                match rx.try_recv() {
                     Ok(samples) => {
                         sample_queue.extend(samples);
-                        // 디버깅 로그 제거 (너무 많은 로그 출력 방지)
                     }
-                    Err(mpsc::RecvTimeoutError::Timeout) => {
-                        // 타임아웃: 버퍼가 비어있으면 마지막 샘플 반복 (끊김 방지)
+                    Err(mpsc::TryRecvError::Empty) => {
+                        // 버퍼가 비어있으면 마지막 샘플 반복 (끊김 방지)
                         break;
                     }
-                    Err(mpsc::RecvTimeoutError::Disconnected) => {
-                        // 채널이 닫혔으면 디코딩이 끝난 것
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        // 채널이 닫혔으면 디코이 끝난 것
                         // sample_queue에 남은 샘플이 있으면 계속 재생
-                        // 없으면 종료 (is_playing은 메인 스레드에서 처리)
                         break;
                     }
                 }
@@ -914,30 +910,30 @@ where
                 // ✅ 모노 출력(channels == 1)이면 1샘플만 소비, 스테레오 이상이면 LR 2샘플 소비
                 let (l, r) = if channels == 1 {
                     // 🔥 모노 출력이면 1샘플만 소비 (L만 pop)
-                    let l = sample_queue.pop_front().unwrap_or(last_samples[0]);
-                    last_samples[0] = l;
-                    last_samples[1] = l; // 내부 상태 유지
+                    let l = sample_queue.pop_front().unwrap_or(last_lr[0]);
+                    last_lr[0] = l;
+                    last_lr[1] = l; // 내부 상태 유지
                     lr_pairs_outputted += 1;
                     (l, l) // 모노이므로 R도 L과 동일
                 } else {
                     // 스테레오 이상: LR 2샘플 소비
                     if sample_queue.len() >= 2 {
-                        let l = sample_queue.pop_front().unwrap_or(last_samples[0]);
-                        let r = sample_queue.pop_front().unwrap_or(last_samples[1]);
-                        last_samples[0] = l;
-                        last_samples[1] = r;
+                        let l = sample_queue.pop_front().unwrap_or(last_lr[0]);
+                        let r = sample_queue.pop_front().unwrap_or(last_lr[1]);
+                        last_lr[0] = l;
+                        last_lr[1] = r;
                         lr_pairs_outputted += 1;
                         (l, r)
                     } else if sample_queue.len() == 1 {
                         // 마지막 샘플 하나만 남은 경우
-                        let l = sample_queue.pop_front().unwrap_or(last_samples[0]);
-                        last_samples[0] = l;
-                        last_samples[1] = l; // 모노인 경우
+                        let l = sample_queue.pop_front().unwrap_or(last_lr[0]);
+                        last_lr[0] = l;
+                        last_lr[1] = l; // 모노인 경우
                         lr_pairs_outputted += 1;
                         (l, l)
                     } else {
                         // 버퍼 부족: 마지막 샘플 사용
-                        (last_samples[0], last_samples[1])
+                        (last_lr[0], last_lr[1])
                     }
                 };
                 
@@ -1022,16 +1018,17 @@ pub async fn stop_audio() -> Result<(), String> {
     }
     
     // ✅ 상태 업데이트 후 짧은 대기 (콜백이 should_stop을 확인할 시간)
+    // 주의: 이 sleep은 타이밍에 의존하는 안전망 역할
+    // 실제 동기화는 rt_state.should_stop + stream drop으로 보장됨
     thread::sleep(Duration::from_millis(50));
     
     let mut state_guard = PLAYER_STATE.lock().map_err(|e| format!("Lock error: {}", e))?;
     if let Some(state) = state_guard.take() {
         let mut player_state = state.lock().map_err(|e| format!("Lock error: {}", e))?;
-        player_state.should_stop = true;
         player_state.is_playing = false;
         player_state.is_paused = false;
         player_state.samples_played = 0;
-        // stop_ack_tx는 state와 함께 drop됨 (스레드가 종료되면 ack 전송 실패해도 괜찮음)
+        // rt_state.should_stop은 이미 위에서 설정됨
     }
     
     Ok(())
