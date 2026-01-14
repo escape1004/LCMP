@@ -30,6 +30,22 @@
     outline-offset: 2px !important;
   }
 
+  /* 텍스트 선택 영역 색상 (디스코드 포인트 컬러) */
+  ::selection {
+    background-color: #5865f2;
+    color: #ffffff;
+  }
+
+  ::-moz-selection {
+    background-color: #5865f2;
+    color: #ffffff;
+  }
+
+  /* 텍스트 입력 시 커서(캐럿) 색상 (디스코드 포인트 컬러) */
+  * {
+    caret-color: #5865f2;
+  }
+
   /* Global scrollbar style */
   ::-webkit-scrollbar {
     width: 8px;

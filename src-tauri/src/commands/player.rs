@@ -359,20 +359,7 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
     let source_sample_rate = codec_params.sample_rate.unwrap_or(44100);
     
     // 예상 duration 계산 (파일 끝 감지용) - VBR 파일의 경우 부정확할 수 있으므로 참고용으로만 사용
-    // 실제로는 프레임 단위로 읽으면서 동적으로 확인하는 것이 더 정확함
-    let expected_duration = if let Some(time_base) = codec_params.time_base {
-        if let Some(frames) = codec_params.n_frames {
-            let time = time_base.calc_time(frames);
-            Some(time.seconds as f64 + time.frac as f64)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-    
-    // VBR 파일의 경우 헤더 정보가 부정확할 수 있으므로, expected_duration을 None으로 처리하거나
-    // 더 보수적인 임계값 사용 (예: 99% 대신 95%)
+    // ✅ expected_duration은 현재 미사용 (향후 필요 시 재추가 가능)
     
     // 디코더 옵션: 손상된 프레임 무시하고 계속 진행 (에러 복구 강화)
     let mut decoder_opts = DecoderOptions::default();
@@ -469,7 +456,6 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
     };
     
     // 클로저로 이동할 변수들
-    let _expected_duration_clone = expected_duration; // 현재 사용하지 않지만 향후 사용 가능
     let _target_sample_rate_clone = target_sample_rate;
     let audio_track_id = track_id; // ✅ 오디오 트랙 ID (다른 트랙 패킷 스킵용)
     let codec_params_clone = codec_params.clone();
@@ -502,6 +488,8 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
         let mut sent_samples = 0u64;
         let mut last_log = std::time::Instant::now();
         let mut last_pending_warn = std::time::Instant::now(); // ✅ pending 경고 쿨다운
+        let mut last_flush = std::time::Instant::now(); // ✅ 시간 기반 flush
+        const FLUSH_INTERVAL: Duration = Duration::from_millis(30); // 30ms마다 flush
 
         'decode_loop: loop {
             if rt_state_clone.should_stop.load(Ordering::Relaxed) {
@@ -779,6 +767,19 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                     break 'decode_loop;
                 }
             }
+            
+            // ✅ 시간 기반 flush: BATCH_MAX에 못 미쳐도 일정 주기로 전송 (초반 무음/지연 방지)
+            if last_flush.elapsed() >= FLUSH_INTERVAL && !batch_samples.is_empty() {
+                let out = mem::take(&mut batch_samples);
+                let send_count = out.len();
+                if tx.send(out).is_ok() {
+                    sent_samples += send_count as u64;
+                } else {
+                    // 수신자가 없음: 재생 중지
+                    break 'decode_loop;
+                }
+                last_flush = std::time::Instant::now();
+            }
 
             if last_log.elapsed() > Duration::from_secs(2) {
                 eprintln!("[dbg] ok={}, err={}, sent={}, batch={}", decoded_ok, decoded_err, sent_samples, batch_samples.len());
@@ -848,7 +849,8 @@ where
     // 버퍼 사용 (로컬 파일이므로 작은 버퍼로도 충분)
     let sample_rate = config.sample_rate.0 as usize;
     let channels = config.channels as usize;
-    let mut sample_queue: VecDeque<f32> = VecDeque::with_capacity(sample_rate * channels); // 채널 수 고려
+    // ✅ 내부는 항상 LR 2채널 고정이므로 sample_rate * 2로 설정
+    let mut sample_queue: VecDeque<f32> = VecDeque::with_capacity(sample_rate * 2);
     // ✅ last_lr: 항상 2개 고정 (LR) - 모노 출력에서도 안전하게 접근
     let mut last_lr = [0.0f32, 0.0f32]; // 마지막 LR 샘플 저장 (끊김 방지)
     
@@ -927,26 +929,21 @@ where
                     Err(mpsc::TryRecvError::Disconnected) => {
                         // 채널이 닫혔으면 디코이 끝난 것
                         // sample_queue에 남은 샘플이 있으면 계속 재생
-                        // ✅ 디버그: 연결 끊김은 한 번만 로그
-                        static mut DISCONNECT_LOG: bool = false;
-                        unsafe {
-                            if !DISCONNECT_LOG {
-                                eprintln!("[rt] rx disconnected");
-                                DISCONNECT_LOG = true;
-                            }
+                        // ✅ 디버그: 연결 끊김은 한 번만 로그 (Atomic으로 안전하게)
+                        static DISCONNECT_LOGGED: AtomicBool = AtomicBool::new(false);
+                        if DISCONNECT_LOGGED.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
+                            eprintln!("[rt] rx disconnected");
                         }
                         break;
                     }
                 }
             }
             
-            // ✅ 디버그: 볼륨 확인 (처음 몇 번만)
-            static mut VOLUME_LOG_COUNT: u32 = 0;
-            unsafe {
-                if VOLUME_LOG_COUNT < 3 {
-                    eprintln!("[rt] volume={}, queue_len={}", volume, sample_queue.len());
-                    VOLUME_LOG_COUNT += 1;
-                }
+            // ✅ 디버그: 볼륨 확인 (처음 몇 번만, Atomic으로 안전하게)
+            static VOLUME_LOG_COUNT: AtomicU32 = AtomicU32::new(0);
+            let count = VOLUME_LOG_COUNT.fetch_add(1, Ordering::Relaxed);
+            if count < 3 {
+                eprintln!("[rt] volume={}, queue_len={}", volume, sample_queue.len());
             }
             
             // ✅ 데이터 출력: 내부는 항상 LR 인터리브, 출력 시에만 장치 채널 수에 맞게 복제
