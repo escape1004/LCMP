@@ -63,6 +63,11 @@ export const PlaylistView = () => {
   const [resizingColumn, setResizingColumn] = useState<ColumnKey | null>(null);
   const [resizeStartX, setResizeStartX] = useState(0);
   const [resizeStartWidth, setResizeStartWidth] = useState(0);
+  const [tableContainerRef, setTableContainerRef] = useState<HTMLDivElement | null>(null);
+  const [needsHorizontalScroll, setNeedsHorizontalScroll] = useState(false);
+  
+  // 임시 컬럼 너비 상태 (드래그 중에만 사용)
+  const [tempColumnWidths, setTempColumnWidths] = useState<Record<ColumnKey, number>>(columnWidths);
   
   // 컬럼 설정 로드 (앱 시작 시 한 번만)
   useEffect(() => {
@@ -70,8 +75,36 @@ export const PlaylistView = () => {
     loadColumnWidths();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 임시 컬럼 너비 상태 (드래그 중에만 사용)
-  const [tempColumnWidths, setTempColumnWidths] = useState<Record<ColumnKey, number>>(columnWidths);
+  // 빈 공간 너비 계산 및 업데이트
+  useEffect(() => {
+    if (!tableContainerRef) return;
+    if (!visibleColumns || visibleColumns.length === 0) return;
+
+    const updateEmptySpaceWidth = () => {
+      if (!tempColumnWidths) return;
+      const tableWidth = visibleColumns.reduce((sum, key) => sum + (tempColumnWidths[key] || 150), 0);
+      const containerWidth = tableContainerRef.offsetWidth;
+      if (containerWidth === 0) return; // 컨테이너가 아직 렌더링되지 않음
+      
+      if (tableWidth < containerWidth) {
+        // 테이블이 컨테이너보다 작으면 빈 공간을 컨테이너 너비만큼만 채움
+        tableContainerRef.style.setProperty('--empty-space-width', `${containerWidth - tableWidth}px`);
+        setNeedsHorizontalScroll(false);
+      } else {
+        tableContainerRef.style.setProperty('--empty-space-width', '0px');
+        setNeedsHorizontalScroll(true);
+      }
+    };
+
+    updateEmptySpaceWidth();
+
+    const resizeObserver = new ResizeObserver(updateEmptySpaceWidth);
+    resizeObserver.observe(tableContainerRef);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [tableContainerRef, visibleColumns, tempColumnWidths]);
 
   // 컬럼 너비가 변경되면 임시 상태도 업데이트
   useEffect(() => {
@@ -313,7 +346,7 @@ export const PlaylistView = () => {
       </div>
 
       {/* Song List Table */}
-      <div className="flex-1 overflow-auto min-h-0">
+      <div className="flex-1 flex flex-col overflow-hidden min-h-0">
         {isLoading ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-text-muted text-sm">로딩 중...</div>
@@ -324,12 +357,18 @@ export const PlaylistView = () => {
           </div>
         ) : (
           <DragDropContext onDragEnd={handleColumnDragEnd}>
-            <div className="overflow-x-auto bg-bg-primary">
-              <table style={{ 
-                tableLayout: 'fixed', 
-                width: visibleColumns.reduce((sum, key) => sum + (tempColumnWidths[key] || 150), 0) + 'px',
-                borderCollapse: 'collapse'
-              }} className="bg-bg-primary">
+            <div 
+              className="flex-1 flex flex-col overflow-hidden bg-bg-primary" 
+              ref={setTableContainerRef}
+            >
+              <div className={`flex-1 overflow-y-auto min-h-0 ${needsHorizontalScroll ? 'overflow-x-auto' : 'overflow-x-hidden'}`}>
+                <table style={{ 
+                  tableLayout: 'fixed', 
+                  width: (visibleColumns && visibleColumns.length > 0 && tempColumnWidths) 
+                    ? visibleColumns.reduce((sum, key) => sum + (tempColumnWidths[key] || 150), 0) + 'px'
+                    : '100%',
+                  borderCollapse: 'collapse'
+                }} className="bg-bg-primary">
               <thead className="sticky top-0 bg-bg-primary border-b border-border z-10">
                 <tr className="bg-bg-primary relative" style={{ position: 'relative' }}>
                   <Droppable droppableId="columns" direction="horizontal">
@@ -366,11 +405,6 @@ export const PlaylistView = () => {
                                     width: `${width}px`,
                                     minWidth: `${width}px`,
                                     maxWidth: `${width}px`,
-                                    ...(isAlbumArt ? {
-                                      position: 'sticky',
-                                      left: 0,
-                                      zIndex: 20,
-                                    } : {}),
                                   }}
                                   className={`text-left px-4 py-3 text-xs font-semibold text-text-muted uppercase tracking-wide select-none relative overflow-hidden text-ellipsis whitespace-nowrap transition-colors ${
                                     isAlbumArt ? 'bg-bg-primary group-hover:bg-hover' : ''
@@ -429,8 +463,7 @@ export const PlaylistView = () => {
                             left: '100%',
                             top: 0,
                             bottom: 0,
-                            right: 0,
-                            width: '100vw',
+                            width: 'var(--empty-space-width, 0px)',
                             padding: 0,
                             margin: 0,
                             height: '100%'
@@ -557,11 +590,6 @@ export const PlaylistView = () => {
                             width: `${width}px`,
                             minWidth: `${width}px`,
                             maxWidth: `${width}px`,
-                            ...(isAlbumArt ? {
-                              position: 'sticky',
-                              left: 0,
-                              zIndex: 10,
-                            } : {}),
                           }}
                           className={`px-4 py-3 text-sm overflow-hidden text-ellipsis whitespace-nowrap transition-colors duration-150 ${
                             columnKey === 'album_art' 
@@ -587,8 +615,7 @@ export const PlaylistView = () => {
                         left: '100%',
                         top: 0,
                         bottom: '-1px',
-                        right: 0,
-                        width: '100vw',
+                        width: 'var(--empty-space-width, 0px)',
                         padding: 0,
                         margin: 0,
                         height: 'calc(100% + 1px)'
@@ -600,6 +627,7 @@ export const PlaylistView = () => {
               })}
             </tbody>
           </table>
+              </div>
             </div>
           </DragDropContext>
         )}

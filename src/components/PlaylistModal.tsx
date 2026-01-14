@@ -127,7 +127,6 @@ export const PlaylistModal = ({
                   checked={isDynamic}
                   onChange={(e) => setIsDynamic(e.target.checked)}
                   disabled={isLoading}
-                  className="w-4 h-4 rounded border-border bg-bg-sidebar text-accent focus:ring-accent"
                 />
                 <Label htmlFor="is-dynamic" className="cursor-pointer text-text-primary font-medium">
                   동적 플레이리스트 (태그 및 메타데이터 필터 사용)
