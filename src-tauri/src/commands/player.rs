@@ -119,6 +119,151 @@ pub async fn get_audio_duration(file_path: String) -> Result<f64, String> {
     Ok(duration)
 }
 
+// 메타데이터 추출 함수
+pub fn extract_metadata(file_path: &str) -> Result<(Option<String>, Option<String>, Option<String>, Option<i32>, Option<String>, Option<f64>), String> {
+    let file = File::open(file_path)
+        .map_err(|e| format!("Failed to open file: {}", e))?;
+    
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut hint = Hint::new();
+    if let Some(extension) = std::path::Path::new(file_path).extension() {
+        if let Some(ext_str) = extension.to_str() {
+            hint.with_extension(ext_str);
+        }
+    }
+    
+    let meta_opts: MetadataOptions = Default::default();
+    let fmt_opts: FormatOptions = Default::default();
+    
+    let probe = get_probe();
+    let probed = probe.format(&hint, mss, &fmt_opts, &meta_opts)
+        .map_err(|e| format!("Failed to probe format: {}", e))?;
+    
+    let mut title = None;
+    let mut artist = None;
+    let mut album = None;
+    let mut year = None;
+    let mut genre = None;
+    let mut duration = None;
+    
+    // 메타데이터 추출 (파일 확장자에 따라 적절한 라이브러리 사용)
+    let extension = std::path::Path::new(file_path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|s| s.to_lowercase());
+    
+    match extension.as_deref() {
+        Some("mp3") => {
+            // MP3 파일: id3 라이브러리 사용
+            if let Ok(tag) = id3::Tag::read_from_path(file_path) {
+                // ID3 프레임을 순회하며 메타데이터 추출
+                for frame in tag.frames() {
+                    let frame_id = frame.id();
+                    let content = frame.content();
+                    match frame_id {
+                        "TIT2" | "TT2" => {
+                            if title.is_none() {
+                                if let id3::Content::Text(text) = content {
+                                    title = Some(text.to_string());
+                                }
+                            }
+                        }
+                        "TPE1" | "TP1" => {
+                            if artist.is_none() {
+                                if let id3::Content::Text(text) = content {
+                                    artist = Some(text.to_string());
+                                }
+                            }
+                        }
+                        "TALB" | "TAL" => {
+                            if album.is_none() {
+                                if let id3::Content::Text(text) = content {
+                                    album = Some(text.to_string());
+                                }
+                            }
+                        }
+                        "TDRC" | "TYER" => {
+                            if year.is_none() {
+                                if let id3::Content::Text(text) = content {
+                                    // 날짜에서 연도 추출 (YYYY 형식)
+                                    if text.len() >= 4 {
+                                        if let Ok(year_val) = text[..4].parse::<i32>() {
+                                            year = Some(year_val);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        "TCON" | "TCO" => {
+                            if genre.is_none() {
+                                if let id3::Content::Text(text) = content {
+                                    genre = Some(text.to_string());
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        Some("flac") => {
+            // FLAC 파일: metaflac 라이브러리 사용
+            if let Ok(tag) = metaflac::Tag::read_from_path(file_path) {
+                if let Some(vorbis_comments) = tag.vorbis_comments() {
+                    if let Some(t) = vorbis_comments.title() {
+                        if let Some(first) = t.first() {
+                            title = Some(first.to_string());
+                        }
+                    }
+                    if let Some(a) = vorbis_comments.artist() {
+                        if let Some(first) = a.first() {
+                            artist = Some(first.to_string());
+                        }
+                    }
+                    if let Some(al) = vorbis_comments.album() {
+                        if let Some(first) = al.first() {
+                            album = Some(first.to_string());
+                        }
+                    }
+                    // FLAC에서 DATE 태그 찾기
+                    if let Some(d) = vorbis_comments.get("DATE") {
+                        if let Some(first) = d.first() {
+                            // FLAC date는 문자열이므로 연도 추출 시도
+                            if first.len() >= 4 {
+                                if let Ok(year_val) = first[..4].parse::<i32>() {
+                                    year = Some(year_val);
+                                }
+                            }
+                        }
+                    }
+                    if let Some(g) = vorbis_comments.genre() {
+                        if let Some(first) = g.first() {
+                            genre = Some(first.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        _ => {
+            // 다른 포맷은 나중에 지원 가능
+            // 현재는 파일명에서 기본 정보만 추출
+        }
+    }
+    
+    // duration 추출
+    let format = probed.format;
+    if let Some(track) = format.tracks().iter().find(|t| t.codec_params.codec != CODEC_TYPE_NULL) {
+        if let Some(time_base) = track.codec_params.time_base {
+            if let Some(frames) = track.codec_params.n_frames {
+                let time = time_base.calc_time(frames);
+                duration = Some(time.seconds as f64 + time.frac as f64);
+            }
+        }
+    }
+    
+    Ok((title, artist, album, year, genre, duration))
+}
+
 #[tauri::command]
 pub async fn extract_waveform(file_path: String, samples: usize) -> Result<Vec<f32>, String> {
     // ✅ samples == 0 방어: 언더플로우 및 인덱스 오류 방지

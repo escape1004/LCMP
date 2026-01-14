@@ -23,6 +23,8 @@ symphonia = { version = "0.5", features = ["all"] }
 cpal = "0.15"
 rubato = "0.14"  # 고품질 오디오 리샘플러 (FLAC 무손실 재생용)
 rayon = "1.8"  # 병렬 처리 라이브러리
+id3 = "1.13"  # MP3 메타데이터 추출
+metaflac = "0.2"  # FLAC 메타데이터 추출
 
 [features]
 # This feature is used for production builds or when `devPath` points to the filesystem

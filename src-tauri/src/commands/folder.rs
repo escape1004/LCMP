@@ -1,5 +1,6 @@
 use crate::database::get_connection;
 use crate::models::Folder;
+use crate::commands::player::extract_metadata;
 use rusqlite::{Result, params};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -106,19 +107,79 @@ pub(crate) fn scan_folder_for_songs(conn: &rusqlite::Connection, folder_path: &s
             .unwrap_or(false);
         
         if !exists {
-            // 노래 추가 (메타데이터는 나중에 추출)
-            let title = path.file_stem()
+            // 메타데이터 추출 시도
+            let (title_meta, artist_meta, album_meta, year_meta, genre_meta, duration_meta) = 
+                extract_metadata(&file_path).unwrap_or((None, None, None, None, None, None));
+            
+            // 파일명에서 기본 제목 추출
+            let default_title = path.file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("제목 없음")
                 .to_string();
-            let artist = "알 수 없음".to_string();
-            let album = "알 수 없음".to_string();
             
+            let title = title_meta.unwrap_or(default_title);
+            let artist = artist_meta.unwrap_or_else(|| "알 수 없음".to_string());
+            let album = album_meta.unwrap_or_else(|| "알 수 없음".to_string());
+            
+            // 노래 추가
             conn.execute(
-                "INSERT OR IGNORE INTO songs (file_path, title, artist, album) VALUES (?1, ?2, ?3, ?4)",
-                [&file_path, &title, &artist, &album],
+                "INSERT OR IGNORE INTO songs (file_path, title, artist, album, duration, year, genre) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![&file_path, &title, &artist, &album, &duration_meta, &year_meta, &genre_meta],
             )
             .map_err(|e| format!("노래 추가 오류: {}", e))?;
+        } else {
+            // 기존 노래의 메타데이터가 없는 경우 업데이트 시도
+            let (title_meta, artist_meta, album_meta, year_meta, genre_meta, duration_meta) = 
+                extract_metadata(&file_path).unwrap_or((None, None, None, None, None, None));
+            
+            // 기존 노래의 메타데이터가 "알 수 없음"이거나 NULL인 경우 업데이트
+            let existing: Option<(Option<String>, Option<String>, Option<String>)> = conn
+                .query_row(
+                    "SELECT title, artist, album FROM songs WHERE file_path = ?1",
+                    [&file_path],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .ok();
+            
+            let needs_update = if let Some((existing_title, existing_artist, existing_album)) = existing {
+                (existing_title.is_none() || existing_title.as_deref() == Some("알 수 없음")) ||
+                (existing_artist.is_none() || existing_artist.as_deref() == Some("알 수 없음")) ||
+                (existing_album.is_none() || existing_album.as_deref() == Some("알 수 없음"))
+            } else {
+                false
+            };
+            
+            if needs_update && (title_meta.is_some() || artist_meta.is_some() || album_meta.is_some() || 
+               year_meta.is_some() || genre_meta.is_some() || duration_meta.is_some()) {
+                // 기존 값과 병합
+                let existing: (Option<String>, Option<String>, Option<String>, Option<i32>, Option<String>, Option<f64>) = conn
+                    .query_row(
+                        "SELECT title, artist, album, year, genre, duration FROM songs WHERE file_path = ?1",
+                        [&file_path],
+                        |row| Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                            row.get(5)?,
+                        )),
+                    )
+                    .unwrap_or((None, None, None, None, None, None));
+                
+                let final_title = title_meta.or(existing.0);
+                let final_artist = artist_meta.or(existing.1);
+                let final_album = album_meta.or(existing.2);
+                let final_year = year_meta.or(existing.3);
+                let final_genre = genre_meta.or(existing.4);
+                let final_duration = duration_meta.or(existing.5);
+                
+                conn.execute(
+                    "UPDATE songs SET title = ?1, artist = ?2, album = ?3, year = ?4, genre = ?5, duration = ?6, updated_at = CURRENT_TIMESTAMP WHERE file_path = ?7",
+                    params![&final_title, &final_artist, &final_album, &final_year, &final_genre, &final_duration, &file_path],
+                )
+                .map_err(|e| format!("메타데이터 업데이트 오류: {}", e))?;
+            }
         }
     }
     
