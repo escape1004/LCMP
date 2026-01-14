@@ -12,6 +12,7 @@ import { ColumnSelectorDialog } from './ColumnSelectorDialog';
 import { ArrowUp, ArrowDown, Play, Search, X } from 'lucide-react';
 import { Tooltip } from './ui/tooltip';
 import { Input } from './ui/input';
+import { SongContextMenu } from './SongContextMenu';
 
 const formatDuration = (seconds: number | null): string => {
   if (seconds === null || seconds === undefined) return '--:--';
@@ -74,6 +75,13 @@ export const PlaylistView = () => {
   // 검색 기능
   const [searchQuery, setSearchQuery] = useState('');
   const [searchField, setSearchField] = useState<ColumnKey | 'all'>('all');
+  
+  // 컨텍스트 메뉴
+  const [contextMenu, setContextMenu] = useState<{
+    song: Song;
+    x: number;
+    y: number;
+  } | null>(null);
   
   // 컬럼 설정 로드 (앱 시작 시 한 번만)
   useEffect(() => {
@@ -382,6 +390,32 @@ export const PlaylistView = () => {
     newOrder.splice(destinationIndex, 0, removed);
     
     reorderColumns(newOrder);
+  };
+
+  // 컨텍스트 메뉴 핸들러
+  const handleSongContextMenu = (e: React.MouseEvent, song: Song) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      song,
+      x: e.clientX,
+      y: e.clientY,
+    });
+  };
+
+  const handleAddToQueue = (song: Song) => {
+    const { addToQueue } = useQueueStore.getState();
+    addToQueue(song);
+  };
+
+  const handleAddToPlaylist = (song: Song) => {
+    // TODO: 플레이리스트 추가 기능 구현
+    console.log('Add to playlist:', song);
+  };
+
+  const handleEditMetadata = (song: Song) => {
+    // TODO: 메타데이터 수정 기능 구현
+    console.log('Edit metadata:', song);
   };
 
   // 현재 보이는 노래들(검색 결과 포함)을 대기열에 추가 (웨이폼이 있는 노래만 추가)
@@ -712,6 +746,7 @@ export const PlaylistView = () => {
                               ? `px-2 ${hasWaveform ? 'bg-bg-primary group-hover:bg-hover' : 'bg-bg-primary'}` 
                               : ''
                           }`}
+                          onContextMenu={(e) => handleSongContextMenu(e, song)}
                         >
                           {renderCell(columnKey)}
                         </td>
@@ -752,6 +787,19 @@ export const PlaylistView = () => {
         open={isColumnDialogOpen}
         onOpenChange={setIsColumnDialogOpen}
       />
+      
+      {/* 컨텍스트 메뉴 */}
+      {contextMenu && (
+        <SongContextMenu
+          song={contextMenu.song}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onAddToQueue={handleAddToQueue}
+          onAddToPlaylist={handleAddToPlaylist}
+          onEditMetadata={handleEditMetadata}
+        />
+      )}
     </div>
   );
 };
