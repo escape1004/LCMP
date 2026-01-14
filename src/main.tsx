@@ -19,6 +19,13 @@ window.addEventListener("contextmenu", (event) => {
   event.preventDefault();
 });
 
+// Tab 키 동작 비활성화
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Tab") {
+    event.preventDefault();
+  }
+});
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />

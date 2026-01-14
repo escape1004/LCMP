@@ -502,11 +502,13 @@ export const PlaylistView = () => {
                       );
                     case 'file_name':
                       const fileName = song.file_path.split(/[/\\]/).pop() || '파일명 없음';
-                      return <span className="block truncate">{fileName}</span>;
+                      const hasFileName = !!song.file_path;
+                      return <span className={`block truncate ${hasFileName ? 'text-text-primary' : 'text-text-muted'}`}>{fileName}</span>;
                     case 'title':
+                      const hasTitle = !!song.title;
                       return (
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="truncate">{song.title || '제목 없음'}</span>
+                          <span className={`truncate ${hasTitle ? 'text-text-primary' : 'text-text-muted'}`}>{song.title || '제목 없음'}</span>
                           {!hasWaveform && isGenerating && (
                             <span className="text-xs text-text-muted italic flex-shrink-0">
                               (웨이브폼 생성중...)
@@ -515,23 +517,31 @@ export const PlaylistView = () => {
                         </div>
                       );
                     case 'artist':
-                      return <span className="block truncate">{song.artist || '아티스트 없음'}</span>;
+                      const hasArtist = !!song.artist;
+                      return <span className={`block truncate ${hasArtist ? 'text-text-primary' : 'text-text-muted'}`}>{song.artist || '아티스트 없음'}</span>;
                     case 'album':
-                      return <span className="block truncate">{song.album || '앨범 없음'}</span>;
+                      const hasAlbum = !!song.album;
+                      return <span className={`block truncate ${hasAlbum ? 'text-text-primary' : 'text-text-muted'}`}>{song.album || '앨범 없음'}</span>;
                     case 'duration':
-                      return <span className="block truncate">{formatDuration(song.duration)}</span>;
+                      const hasDuration = song.duration !== null && song.duration !== undefined;
+                      return <span className={`block truncate ${hasDuration ? 'text-text-primary' : 'text-text-muted'}`}>{formatDuration(song.duration)}</span>;
                     case 'year':
-                      return <span className="block truncate">{song.year ? song.year.toString() : '--'}</span>;
+                      const hasYear = song.year !== null && song.year !== undefined;
+                      return <span className={`block truncate ${hasYear ? 'text-text-primary' : 'text-text-muted'}`}>{song.year ? song.year.toString() : '--'}</span>;
                     case 'genre':
-                      return <span className="block truncate">{song.genre || '장르 없음'}</span>;
+                      const hasGenre = !!song.genre;
+                      return <span className={`block truncate ${hasGenre ? 'text-text-primary' : 'text-text-muted'}`}>{song.genre || '장르 없음'}</span>;
                     case 'file_path':
-                      return <span className="block truncate text-xs font-mono">{song.file_path}</span>;
+                      const hasFilePath = !!song.file_path;
+                      return <span className={`block truncate text-xs font-mono ${hasFilePath ? 'text-text-primary' : 'text-text-muted'}`}>{song.file_path || '경로 없음'}</span>;
                     case 'created_at':
-                      return <span className="block truncate">{new Date(song.created_at).toLocaleDateString('ko-KR')}</span>;
+                      const hasCreatedAt = !!song.created_at;
+                      return <span className={`block truncate ${hasCreatedAt ? 'text-text-primary' : 'text-text-muted'}`}>{song.created_at ? new Date(song.created_at).toLocaleDateString('ko-KR') : '--'}</span>;
                     case 'updated_at':
-                      return <span className="block truncate">{new Date(song.updated_at).toLocaleDateString('ko-KR')}</span>;
+                      const hasUpdatedAt = !!song.updated_at;
+                      return <span className={`block truncate ${hasUpdatedAt ? 'text-text-primary' : 'text-text-muted'}`}>{song.updated_at ? new Date(song.updated_at).toLocaleDateString('ko-KR') : '--'}</span>;
                     default:
-                      return <span className="block truncate">--</span>;
+                      return <span className="block truncate text-text-muted">--</span>;
                   }
                 };
                 
@@ -553,36 +563,6 @@ export const PlaylistView = () => {
                       const isAlbumArt = columnKey === 'album_art';
                       const isLastColumn = colIndex === visibleColumns.length - 1;
                       
-                      // 메타데이터가 있는지 확인
-                      const hasValue = (() => {
-                        switch (columnKey) {
-                          case 'album_art':
-                            return !!song.album_art_path;
-                          case 'file_name':
-                            return !!song.file_path;
-                          case 'title':
-                            return !!song.title;
-                          case 'artist':
-                            return !!song.artist;
-                          case 'album':
-                            return !!song.album;
-                          case 'duration':
-                            return song.duration !== null && song.duration !== undefined;
-                          case 'year':
-                            return song.year !== null && song.year !== undefined;
-                          case 'genre':
-                            return !!song.genre;
-                          case 'file_path':
-                            return !!song.file_path;
-                          case 'created_at':
-                            return !!song.created_at;
-                          case 'updated_at':
-                            return !!song.updated_at;
-                          default:
-                            return false;
-                        }
-                      })();
-                      
                       return (
                         <td
                           key={columnKey}
@@ -595,8 +575,6 @@ export const PlaylistView = () => {
                             columnKey === 'album_art' 
                               ? `px-2 ${hasWaveform ? 'bg-bg-primary group-hover:bg-hover' : 'bg-bg-primary'}` 
                               : ''
-                          } ${
-                            hasValue ? 'text-text-primary' : 'text-text-muted'
                           }`}
                         >
                           {renderCell(columnKey)}
