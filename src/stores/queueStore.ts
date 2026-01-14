@@ -159,10 +159,11 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
     if (state.originalQueue.length === 0) return;
     
     // 원본 대기열로 복원
-    const originalIndex = state.currentIndex !== null && state.currentIndex < state.originalQueue.length
-      ? state.queue[state.currentIndex]
-        ? state.originalQueue.findIndex(s => s.id === state.queue[state.currentIndex].id)
-        : null
+    const originalIndex = state.currentIndex !== null && state.currentIndex < state.originalQueue.length && state.currentIndex < state.queue.length
+      ? (() => {
+          const currentSong = state.queue[state.currentIndex];
+          return currentSong ? state.originalQueue.findIndex(s => s.id === currentSong.id) : null;
+        })()
       : null;
     
     set({ 

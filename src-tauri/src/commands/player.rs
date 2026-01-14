@@ -265,6 +265,68 @@ pub fn extract_metadata(file_path: &str) -> Result<(Option<String>, Option<Strin
 }
 
 #[tauri::command]
+pub async fn get_audio_format_info(file_path: String) -> Result<(String, Option<u32>, Option<u32>, Option<u8>), String> {
+    let file = File::open(&file_path)
+        .map_err(|e| format!("Failed to open file: {}", e))?;
+    
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut hint = Hint::new();
+    if let Some(extension) = std::path::Path::new(&file_path).extension() {
+        if let Some(ext_str) = extension.to_str() {
+            hint.with_extension(ext_str);
+        }
+    }
+    
+    let meta_opts: MetadataOptions = Default::default();
+    let fmt_opts: FormatOptions = Default::default();
+    
+    let probe = get_probe();
+    let probed = probe.format(&hint, mss, &fmt_opts, &meta_opts)
+        .map_err(|e| format!("Failed to probe format: {}", e))?;
+    
+    // 파일 확장자로 포맷 결정
+    let format_name = std::path::Path::new(&file_path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|s| s.to_uppercase())
+        .unwrap_or_else(|| "Unknown".to_string());
+    
+    // 오디오 트랙 찾기
+    let track = probed.format.tracks()
+        .iter()
+        .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+        .ok_or_else(|| "No valid audio track found".to_string())?;
+    
+    let sample_rate = track.codec_params.sample_rate;
+    let channels = track.codec_params.channels.map(|c| c.count() as u8);
+    
+    // 비트레이트 계산 (파일 크기와 duration 기반)
+    let bitrate = if let Some(duration) = track.codec_params.time_base.and_then(|tb| {
+        track.codec_params.n_frames.map(|frames| {
+            let time = tb.calc_time(frames);
+            time.seconds as f64 + time.frac as f64
+        })
+    }) {
+        if duration > 0.0 {
+            // 파일을 다시 열어서 크기 확인
+            if let Ok(metadata) = std::fs::metadata(&file_path) {
+                let file_size_bytes = metadata.len() as f64;
+                let bitrate_kbps = ((file_size_bytes * 8.0) / duration / 1000.0) as u32;
+                Some(bitrate_kbps)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    Ok((format_name, sample_rate, bitrate, channels))
+}
+
+#[tauri::command]
 pub async fn extract_waveform(file_path: String, samples: usize) -> Result<Vec<f32>, String> {
     // ✅ samples == 0 방어: 언더플로우 및 인덱스 오류 방지
     if samples == 0 {

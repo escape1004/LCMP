@@ -115,7 +115,7 @@ export const useTableColumnsStore = create<TableColumnsStore>((set, get) => ({
     try {
       const widths = await invoke<Record<string, number>>('get_table_column_widths');
       // 기본값과 병합
-      set((state) => ({
+      set((_state) => ({
         columnWidths: { ...DEFAULT_COLUMN_WIDTHS, ...widths },
       }));
     } catch (error) {

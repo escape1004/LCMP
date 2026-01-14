@@ -14,7 +14,7 @@ export const WaveformWidget = () => {
   const { waveform, currentTime, duration, seek, isLoadingWaveform, currentSong, isPlaying, setCurrentTime } = usePlayerStore();
   const waveformRef = useRef<HTMLDivElement>(null);
   const [revealedCount, setRevealedCount] = useState(0);
-  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const progressIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hoverTime, setHoverTime] = useState<number | null>(null);
   const [hoverPosition, setHoverPosition] = useState<{ x: number; y: number } | null>(null);
 

@@ -1,5 +1,4 @@
 import { useQueueStore } from "../stores/queueStore";
-import { Song } from "../types";
 
 export const QueueView = () => {
   const { queue, currentIndex, playSongAtIndex } = useQueueStore();

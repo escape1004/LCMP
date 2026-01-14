@@ -9,11 +9,9 @@ interface TooltipProps {
 export const Tooltip = ({ children, content, delay = 1500 }: TooltipProps) => {
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState<{ top: number; left: number; arrowPosition: 'top' | 'bottom' }>({ top: 0, left: 0, arrowPosition: 'top' });
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
-
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
   const calculatePosition = (mouseX: number, mouseY: number) => {
     const offset = 8; // 커서와 툴팁 사이의 간격
@@ -53,7 +51,6 @@ export const Tooltip = ({ children, content, delay = 1500 }: TooltipProps) => {
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    setMousePosition({ x: e.clientX, y: e.clientY });
     if (isVisible) {
       const pos = calculatePosition(e.clientX, e.clientY);
       // 실제 툴팁 크기를 사용하여 재계산
@@ -94,7 +91,6 @@ export const Tooltip = ({ children, content, delay = 1500 }: TooltipProps) => {
   };
 
   const showTooltip = (e: React.MouseEvent) => {
-    setMousePosition({ x: e.clientX, y: e.clientY });
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }

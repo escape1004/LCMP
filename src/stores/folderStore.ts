@@ -14,7 +14,7 @@ interface FolderStore {
   selectFolder: (folderId: number | null) => void;
 }
 
-export const useFolderStore = create<FolderStore>((set, get) => ({
+export const useFolderStore = create<FolderStore>((set) => ({
   folders: [],
   selectedFolderId: null,
   isLoading: false,

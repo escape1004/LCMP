@@ -15,6 +15,7 @@ use commands::{
     get_saved_volume, extract_waveform,
     get_table_columns, set_table_columns,
     get_table_column_widths, set_table_column_widths,
+    get_audio_format_info,
 };
 
 fn main() {
@@ -61,6 +62,7 @@ fn main() {
             set_table_columns,
             get_table_column_widths,
             set_table_column_widths,
+            get_audio_format_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

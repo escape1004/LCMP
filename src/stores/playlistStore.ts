@@ -14,7 +14,7 @@ interface PlaylistStore {
   selectPlaylist: (playlistId: number | null) => void;
 }
 
-export const usePlaylistStore = create<PlaylistStore>((set, get) => ({
+export const usePlaylistStore = create<PlaylistStore>((set) => ({
   playlists: [],
   selectedPlaylistId: null,
   isLoading: false,

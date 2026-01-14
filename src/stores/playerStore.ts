@@ -28,7 +28,7 @@ interface PlayerStore {
   toggleRepeat: () => void;
   loadWaveform: (song: Song) => Promise<void>;
   setDuration: (duration: number) => void;
-  setCurrentTime: (time: number) => void;
+  setCurrentTime: (time: number | ((prev: number) => number)) => void;
   initializeAudio: (song: Song) => Promise<void>;
   cleanup: () => Promise<void>;
   loadSavedVolume: () => Promise<void>;
@@ -239,7 +239,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
           waveform.push(...chunkData);
           
           // 각 청크가 추가될 때마다 상태 업데이트 (점진적 표시)
-          set((state) => ({
+          set((_state) => ({
             waveform: [...waveform],
             isLoadingWaveform: waveform.length < waveformSamples
           }));

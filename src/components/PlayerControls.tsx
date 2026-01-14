@@ -3,6 +3,7 @@ import { useQueueStore } from "../stores/queueStore";
 import { usePlayerStore } from "../stores/playerStore";
 import { useEffect, useRef, useState } from "react";
 import { Tooltip } from "./ui/tooltip";
+import { invoke } from "@tauri-apps/api/tauri";
 
 export const PlayerControls = () => {
   const { isOpen, toggleQueue, queue, currentIndex, playNext, playPrevious, playSong } = useQueueStore();
@@ -16,7 +17,6 @@ export const PlayerControls = () => {
     shuffle,
     repeat,
     togglePlayPause, 
-    seek, 
     setVolume,
     toggleMute,
     toggleShuffle,
@@ -29,9 +29,18 @@ export const PlayerControls = () => {
   // 제목이 길어서 애니메이션이 필요한지 확인
   const title = displaySong?.title || "노래 제목";
   const artist = displaySong?.artist || "아티스트";
+  const album = displaySong?.album || null;
   const titleContainerRef = useRef<HTMLDivElement>(null);
   const titleTextRef = useRef<HTMLSpanElement>(null);
   const [needsMarquee, setNeedsMarquee] = useState(false);
+  
+  // 오디오 포맷 정보
+  const [audioFormat, setAudioFormat] = useState<{
+    format: string;
+    sampleRate: number | null;
+    bitrate: number | null;
+    channels: number | null;
+  } | null>(null);
   
   // 볼륨 드래그 상태
   const [isDraggingVolume, setIsDraggingVolume] = useState(false);
@@ -248,6 +257,60 @@ export const PlayerControls = () => {
     };
   }, [isDraggingVolume, setVolume]);
 
+  // 오디오 포맷 정보 가져오기
+  useEffect(() => {
+    if (!displaySong?.file_path) {
+      setAudioFormat(null);
+      return;
+    }
+
+    const fetchAudioFormat = async () => {
+      try {
+        const [format, sampleRate, bitrate, channels] = await invoke<[string, number | null, number | null, number | null]>(
+          'get_audio_format_info',
+          { filePath: displaySong.file_path }
+        );
+        
+        setAudioFormat({
+          format,
+          sampleRate,
+          bitrate,
+          channels,
+        });
+      } catch (error) {
+        console.error('Failed to get audio format info:', error);
+        setAudioFormat(null);
+      }
+    };
+
+    fetchAudioFormat();
+  }, [displaySong?.file_path]);
+
+  // 오디오 포맷 정보 포맷팅
+  const formatAudioInfo = () => {
+    if (!audioFormat) return null;
+    
+    const parts: string[] = [audioFormat.format];
+    
+    if (audioFormat.sampleRate) {
+      const sampleRateKHz = (audioFormat.sampleRate / 1000).toFixed(0);
+      parts.push(`${sampleRateKHz}kHz`);
+    }
+    
+    if (audioFormat.bitrate) {
+      parts.push(`${audioFormat.bitrate}kbps`);
+    }
+    
+    if (audioFormat.channels) {
+      const channelName = audioFormat.channels === 1 ? 'Mono' : 
+                         audioFormat.channels === 2 ? 'Stereo' : 
+                         `${audioFormat.channels}ch`;
+      parts.push(channelName);
+    }
+    
+    return parts.join(', ');
+  };
+
   return (
     <div className="bg-bg-sidebar border-t border-border">
       {/* 플레이어 컨트롤 */}
@@ -260,7 +323,7 @@ export const PlayerControls = () => {
           className="flex items-center gap-3 flex-1 min-w-0"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="w-14 h-14 bg-hover rounded flex items-center justify-center flex-shrink-0">
+          <div className="w-16 h-16 bg-hover rounded flex items-center justify-center flex-shrink-0">
             {displaySong?.album_art_path ? (
               <img
                 src={displaySong.album_art_path}
@@ -290,6 +353,16 @@ export const PlayerControls = () => {
             <div className="text-xs text-text-muted truncate">
               {artist}
             </div>
+            {album && (
+              <div className="text-xs text-text-muted truncate">
+                {album}
+              </div>
+            )}
+            {audioFormat && (
+              <div className="text-xs text-text-muted truncate">
+                {formatAudioInfo()}
+              </div>
+            )}
           </div>
         </div>
 

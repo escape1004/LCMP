@@ -62,7 +62,7 @@ export const PlaylistView = () => {
   const [isLoadingSize, setIsLoadingSize] = useState(false);
   
   // 컬럼 설정
-  const { visibleColumns, columnWidths, sortColumn, sortOrder, loadColumns, loadColumnWidths, setColumnWidth, toggleSort, isLoading: isLoadingColumns } = useTableColumnsStore();
+  const { visibleColumns, columnWidths, sortColumn, sortOrder, loadColumns, loadColumnWidths, setColumnWidth, toggleSort } = useTableColumnsStore();
   const [isColumnDialogOpen, setIsColumnDialogOpen] = useState(false);
   const [resizingColumn, setResizingColumn] = useState<ColumnKey | null>(null);
   const [resizeStartX, setResizeStartX] = useState(0);
@@ -530,12 +530,12 @@ export const PlaylistView = () => {
               }} className="bg-bg-primary">
             <thead className="sticky top-0 bg-bg-primary border-b border-border z-10">
               <tr className="bg-bg-primary relative" style={{ position: 'relative' }}>
-                {visibleColumns.map((columnKey, index) => {
+                {visibleColumns.map((columnKey) => {
                   const column = AVAILABLE_COLUMNS.find(c => c.key === columnKey);
                   if (!column) return null;
                   
                   const width = tempColumnWidths[columnKey] || 150;
-                  const isSortable = column.sortable !== false;
+                  const isSortable = 'sortable' in column ? column.sortable !== false : true;
                   const isSorted = sortColumn === columnKey;
                   const isAlbumArt = columnKey === 'album_art';
                   const sortIcon = isSorted && sortOrder === 'asc' 
@@ -693,10 +693,8 @@ export const PlaylistView = () => {
                     }}
                     onDoubleClick={() => handleSongDoubleClick(song)}
                   >
-                    {visibleColumns.map((columnKey, colIndex) => {
+                    {visibleColumns.map((columnKey) => {
                       const width = tempColumnWidths[columnKey] || 150;
-                      const isAlbumArt = columnKey === 'album_art';
-                      const isLastColumn = colIndex === visibleColumns.length - 1;
                       
                       return (
                         <td
