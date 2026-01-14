@@ -46,6 +46,10 @@ impl RtState {
     }
 }
 
+// ✅ RT 콜백에서 사용하는 전역 디버그 상태 (모듈 스코프로 명확히)
+static DISCONNECT_LOGGED: AtomicBool = AtomicBool::new(false);
+static VOLUME_LOG_COUNT: AtomicU32 = AtomicU32::new(0);
+
 // 플레이어 상태 (비실시간 접근용)
 struct PlayerState {
     is_playing: bool,
@@ -401,8 +405,7 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
         }
     );
     
-    // Seek 성공 시 디코더 리셋 및 samples_played 초기화
-    let initial_packet_time = seek_time;
+    // ✅ initial_packet_time 제거: _current_packet_time 미사용으로 불필요
     if seek_result.is_ok() {
         // Seek 성공 시 디코더 리셋 및 카운터 초기화
         decoder.reset();
@@ -456,10 +459,9 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
     };
     
     // 클로저로 이동할 변수들
-    let _target_sample_rate_clone = target_sample_rate;
     let audio_track_id = track_id; // ✅ 오디오 트랙 ID (다른 트랙 패킷 스킵용)
-    let codec_params_clone = codec_params.clone();
-    let initial_packet_time_clone = initial_packet_time; // 초기화 Seek에서 읽은 첫 패킷의 타임스탬프
+    // ✅ target_sample_rate는 build_stream에서 직접 사용하므로 클로저로 이동 불필요
+    // ✅ codec_params_clone, initial_packet_time_clone 제거: _current_packet_time 미사용으로 불필요
     let needs_resampling_clone = needs_resampling; // EOF에서 리샘플러 flush를 위해 필요
     
     // 여러 패킷을 배치로 처리하여 효율성 향상
@@ -479,7 +481,7 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
         // ✅ pending 버퍼: 리샘플러에 고정 크기 블록을 전달하기 위한 누적 버퍼
         let mut pending_l: VecDeque<f32> = VecDeque::with_capacity(RS_IN_FRAMES * 3);
         let mut pending_r: VecDeque<f32> = VecDeque::with_capacity(RS_IN_FRAMES * 3);
-        let mut _current_packet_time = initial_packet_time_clone; // 참고용 (UI 표시용)
+        // ✅ _current_packet_time 제거: 현재 미사용 (향후 UI 이벤트 필요 시 재추가 가능)
         let mut zero_frame_count = 0u32;
 
         // 디버깅 카운터
@@ -490,6 +492,8 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
         let mut last_pending_warn = std::time::Instant::now(); // ✅ pending 경고 쿨다운
         let mut last_flush = std::time::Instant::now(); // ✅ 시간 기반 flush
         const FLUSH_INTERVAL: Duration = Duration::from_millis(30); // 30ms마다 flush
+        const MIN_FLUSH_SAMPLES: usize = 1024 * 2; // 최소 1024 프레임 * 2 (LR) - 메시지 폭발 방지
+        const FORCE_FLUSH_INTERVAL: Duration = Duration::from_millis(200); // 200ms 경과 시 MIN_FLUSH 무시하고 강제 전송 (방탄 백업)
 
         'decode_loop: loop {
             if rt_state_clone.should_stop.load(Ordering::Relaxed) {
@@ -594,12 +598,7 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                     }
                 };
 
-                // packet.ts()는 참고용으로만 업데이트
-                let packet_ts = packet.ts();
-                if let Some(time_base) = codec_params_clone.time_base {
-                    let time = time_base.calc_time(packet_ts);
-                    _current_packet_time = time.seconds as f64 + time.frac as f64;
-                }
+                // ✅ packet_ts, time_base 사용 제거: _current_packet_time 미사용으로 불필요
 
                 match decoder.decode(&packet) {
                     Ok(decoded) => {
@@ -755,10 +754,13 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                 }
             }
 
-            // ✅ (B) batch_samples가 BATCH_MAX_SAMPLES 이상이면 고정 크기로 전송 (안정적인 전송)
+            // ✅ (B) batch_samples가 BATCH_MAX_SAMPLES 이상이면 고정 크기로 전송 (성능 최적화: split_off + mem::take)
             // ✅ while 루프로 여러 번 전송 가능 (큰 덩어리가 쌓였을 때 대응)
+            // ✅ >= 조건으로 딱 맞게 쌓인 경우도 즉시 전송 (예측 가능성 향상)
             while batch_samples.len() >= BATCH_MAX_SAMPLES {
-                let out: Vec<f32> = batch_samples.drain(..BATCH_MAX_SAMPLES).collect();
+                // split_off로 나머지 분리 후 mem::take로 정확히 BATCH_MAX_SAMPLES만 전송 (복사/할당 최소화)
+                let rest = batch_samples.split_off(BATCH_MAX_SAMPLES);
+                let out = mem::take(&mut batch_samples); // 정확히 BATCH_MAX_SAMPLES
                 let send_count = out.len();
                 if tx.send(out).is_ok() {
                     sent_samples += send_count as u64;
@@ -766,10 +768,24 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                     // 수신자가 없음: 재생 중지
                     break 'decode_loop;
                 }
+                batch_samples = rest; // 나머지로 교체
             }
             
             // ✅ 시간 기반 flush: BATCH_MAX에 못 미쳐도 일정 주기로 전송 (초반 무음/지연 방지)
-            if last_flush.elapsed() >= FLUSH_INTERVAL && !batch_samples.is_empty() {
+            // ✅ 최소 샘플 수 하한으로 메시지 폭발 방지
+            // ✅ FORCE_FLUSH_INTERVAL 백업 규칙: 200ms 경과 시 MIN_FLUSH 무시하고 강제 전송 (방탄)
+            let flush_elapsed = last_flush.elapsed();
+            let should_flush = if flush_elapsed >= FORCE_FLUSH_INTERVAL {
+                // 200ms 경과 시 MIN_FLUSH 무시하고 강제 전송 (이상 케이스 대비)
+                !batch_samples.is_empty()
+            } else if flush_elapsed >= FLUSH_INTERVAL {
+                // 30ms 경과 + MIN_FLUSH 이상일 때만 전송
+                batch_samples.len() >= MIN_FLUSH_SAMPLES
+            } else {
+                false
+            };
+            
+            if should_flush {
                 let out = mem::take(&mut batch_samples);
                 let send_count = out.len();
                 if tx.send(out).is_ok() {
@@ -929,8 +945,7 @@ where
                     Err(mpsc::TryRecvError::Disconnected) => {
                         // 채널이 닫혔으면 디코이 끝난 것
                         // sample_queue에 남은 샘플이 있으면 계속 재생
-                        // ✅ 디버그: 연결 끊김은 한 번만 로그 (Atomic으로 안전하게)
-                        static DISCONNECT_LOGGED: AtomicBool = AtomicBool::new(false);
+                        // ✅ 디버그: 연결 끊김은 한 번만 로그 (모듈 스코프의 Atomic 사용)
                         if DISCONNECT_LOGGED.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
                             eprintln!("[rt] rx disconnected");
                         }
@@ -939,8 +954,7 @@ where
                 }
             }
             
-            // ✅ 디버그: 볼륨 확인 (처음 몇 번만, Atomic으로 안전하게)
-            static VOLUME_LOG_COUNT: AtomicU32 = AtomicU32::new(0);
+            // ✅ 디버그: 볼륨 확인 (처음 몇 번만, 모듈 스코프의 Atomic 사용)
             let count = VOLUME_LOG_COUNT.fetch_add(1, Ordering::Relaxed);
             if count < 3 {
                 eprintln!("[rt] volume={}, queue_len={}", volume, sample_queue.len());
