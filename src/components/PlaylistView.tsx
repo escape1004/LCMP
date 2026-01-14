@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
+import React from 'react';
 import { useFolderStore } from '../stores/folderStore';
 import { usePlaylistStore } from '../stores/playlistStore';
 import { useSongStore } from '../stores/songStore';
 import { useQueueStore } from '../stores/queueStore';
+import { useTableColumnsStore, AVAILABLE_COLUMNS, ColumnKey } from '../stores/tableColumnsStore';
 import { Song } from '../types';
 import { invoke } from '@tauri-apps/api/tauri';
+import { ColumnSelectorDialog } from './ColumnSelectorDialog';
 
 const formatDuration = (seconds: number | null): string => {
   if (seconds === null || seconds === undefined) return '--:--';
@@ -51,6 +54,15 @@ export const PlaylistView = () => {
   const { playSong } = useQueueStore();
   const [totalSize, setTotalSize] = useState<number>(0);
   const [isLoadingSize, setIsLoadingSize] = useState(false);
+  
+  // 컬럼 설정
+  const { visibleColumns, loadColumns, isLoading: isLoadingColumns } = useTableColumnsStore();
+  const [isColumnDialogOpen, setIsColumnDialogOpen] = useState(false);
+  
+  // 컬럼 설정 로드 (앱 시작 시 한 번만)
+  useEffect(() => {
+    loadColumns();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSongDoubleClick = async (song: Song) => {
     // 웨이폼이 없는 노래는 더블클릭 비활성화
@@ -174,18 +186,23 @@ export const PlaylistView = () => {
           <table className="w-full">
             <thead className="sticky top-0 bg-bg-primary border-b border-border z-10">
               <tr>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-text-muted uppercase tracking-wide">
-                  제목
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-text-muted uppercase tracking-wide">
-                  아티스트
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-text-muted uppercase tracking-wide">
-                  앨범
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-text-muted uppercase tracking-wide">
-                  재생 시간
-                </th>
+                {visibleColumns.map((columnKey) => {
+                  const column = AVAILABLE_COLUMNS.find(c => c.key === columnKey);
+                  if (!column) return null;
+                  
+                  return (
+                    <th
+                      key={columnKey}
+                      className="text-left px-4 py-3 text-xs font-semibold text-text-muted uppercase tracking-wide cursor-pointer hover:bg-hover select-none"
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setIsColumnDialogOpen(true);
+                      }}
+                    >
+                      {column.label}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -194,6 +211,41 @@ export const PlaylistView = () => {
                 const isGenerating = generatingWaveformSongId === song.id;
                 // songsVersion과 waveform_data를 key에 포함하여 변경 시 리렌더링 보장
                 const rowKey = `${song.id}-${songsVersion}-${song.waveform_data ? '1' : '0'}`;
+                
+                const renderCell = (columnKey: ColumnKey) => {
+                  switch (columnKey) {
+                    case 'title':
+                      return (
+                        <div className="flex items-center gap-2">
+                          <span>{song.title || '제목 없음'}</span>
+                          {!hasWaveform && isGenerating && (
+                            <span className="text-xs text-text-muted italic">
+                              (웨이브폼 생성중...)
+                            </span>
+                          )}
+                        </div>
+                      );
+                    case 'artist':
+                      return song.artist || '아티스트 없음';
+                    case 'album':
+                      return song.album || '앨범 없음';
+                    case 'duration':
+                      return formatDuration(song.duration);
+                    case 'year':
+                      return song.year ? song.year.toString() : '--';
+                    case 'genre':
+                      return song.genre || '장르 없음';
+                    case 'file_path':
+                      return <span className="text-xs font-mono">{song.file_path}</span>;
+                    case 'created_at':
+                      return new Date(song.created_at).toLocaleDateString('ko-KR');
+                    case 'updated_at':
+                      return new Date(song.updated_at).toLocaleDateString('ko-KR');
+                    default:
+                      return '--';
+                  }
+                };
+                
                 return (
                   <tr
                     key={rowKey}
@@ -204,25 +256,16 @@ export const PlaylistView = () => {
                     }`}
                     onDoubleClick={() => handleSongDoubleClick(song)}
                   >
-                    <td className="px-4 py-3 text-sm text-text-primary">
-                      <div className="flex items-center gap-2">
-                        <span>{song.title || '제목 없음'}</span>
-                        {!hasWaveform && isGenerating && (
-                          <span className="text-xs text-text-muted italic">
-                            (웨이브폼 생성중...)
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-text-muted">
-                      {song.artist || '아티스트 없음'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-text-muted">
-                      {song.album || '앨범 없음'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-text-muted">
-                      {formatDuration(song.duration)}
-                    </td>
+                    {visibleColumns.map((columnKey) => (
+                      <td
+                        key={columnKey}
+                        className={`px-4 py-3 text-sm ${
+                          columnKey === 'title' ? 'text-text-primary' : 'text-text-muted'
+                        }`}
+                      >
+                        {renderCell(columnKey)}
+                      </td>
+                    ))}
                   </tr>
                 );
               })}
@@ -230,6 +273,12 @@ export const PlaylistView = () => {
           </table>
         )}
       </div>
+      
+      {/* 컬럼 선택 다이얼로그 */}
+      <ColumnSelectorDialog
+        open={isColumnDialogOpen}
+        onOpenChange={setIsColumnDialogOpen}
+      />
     </div>
   );
 };
