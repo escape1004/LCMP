@@ -56,13 +56,62 @@ export const PlaylistView = () => {
   const [isLoadingSize, setIsLoadingSize] = useState(false);
   
   // 컬럼 설정
-  const { visibleColumns, loadColumns, isLoading: isLoadingColumns } = useTableColumnsStore();
+  const { visibleColumns, columnWidths, loadColumns, loadColumnWidths, setColumnWidth, isLoading: isLoadingColumns } = useTableColumnsStore();
   const [isColumnDialogOpen, setIsColumnDialogOpen] = useState(false);
+  const [resizingColumn, setResizingColumn] = useState<ColumnKey | null>(null);
+  const [resizeStartX, setResizeStartX] = useState(0);
+  const [resizeStartWidth, setResizeStartWidth] = useState(0);
   
   // 컬럼 설정 로드 (앱 시작 시 한 번만)
   useEffect(() => {
     loadColumns();
+    loadColumnWidths();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 임시 컬럼 너비 상태 (드래그 중에만 사용)
+  const [tempColumnWidths, setTempColumnWidths] = useState<Record<ColumnKey, number>>(columnWidths);
+
+  // 컬럼 너비가 변경되면 임시 상태도 업데이트
+  useEffect(() => {
+    setTempColumnWidths(columnWidths);
+  }, [columnWidths]);
+
+  // 컬럼 너비 리사이즈 핸들러
+  const handleResizeStart = (e: React.MouseEvent, columnKey: ColumnKey) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizingColumn(columnKey);
+    setResizeStartX(e.clientX);
+    setResizeStartWidth(columnWidths[columnKey] || 150);
+  };
+
+  useEffect(() => {
+    if (!resizingColumn) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const diff = e.clientX - resizeStartX;
+      const newWidth = Math.max(80, resizeStartWidth + diff); // 최소 너비 80px
+      // 임시 상태만 업데이트 (드래그 중에는 저장하지 않음)
+      setTempColumnWidths((prev) => ({ ...prev, [resizingColumn]: newWidth }));
+    };
+
+    const handleMouseUp = async () => {
+      // 드래그가 끝나면 실제로 저장
+      if (resizingColumn) {
+        const finalWidth = tempColumnWidths[resizingColumn];
+        await setColumnWidth(resizingColumn, finalWidth);
+      }
+      setResizingColumn(null);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizingColumn, resizeStartX, resizeStartWidth, tempColumnWidths, setColumnWidth]);
 
   const handleSongDoubleClick = async (song: Song) => {
     // 웨이폼이 없는 노래는 더블클릭 비활성화
@@ -183,23 +232,36 @@ export const PlaylistView = () => {
             <div className="text-text-muted text-sm">노래를 추가해주세요</div>
           </div>
         ) : (
-          <table className="w-full">
+          <table className="w-full" style={{ tableLayout: 'fixed' }}>
             <thead className="sticky top-0 bg-bg-primary border-b border-border z-10">
               <tr>
                 {visibleColumns.map((columnKey) => {
                   const column = AVAILABLE_COLUMNS.find(c => c.key === columnKey);
                   if (!column) return null;
                   
+                  const width = tempColumnWidths[columnKey] || 150;
+                  
                   return (
                     <th
                       key={columnKey}
-                      className="text-left px-4 py-3 text-xs font-semibold text-text-muted uppercase tracking-wide cursor-pointer hover:bg-hover select-none"
+                      style={{ width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` }}
+                      className="text-left px-4 py-3 text-xs font-semibold text-text-muted uppercase tracking-wide cursor-pointer hover:bg-hover select-none relative overflow-hidden text-ellipsis whitespace-nowrap"
                       onContextMenu={(e) => {
                         e.preventDefault();
                         setIsColumnDialogOpen(true);
                       }}
                     >
-                      {column.label}
+                      <div className="flex items-center justify-between min-w-0">
+                        <span className="truncate">{column.label}</span>
+                      </div>
+                      {/* 리사이즈 핸들 */}
+                      <div
+                        className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-accent transition-colors group"
+                        onMouseDown={(e) => handleResizeStart(e, columnKey)}
+                        style={{ zIndex: 10 }}
+                      >
+                        <div className="absolute top-0 right-0 w-0.5 h-full bg-transparent group-hover:bg-accent" />
+                      </div>
                     </th>
                   );
                 })}
@@ -216,33 +278,33 @@ export const PlaylistView = () => {
                   switch (columnKey) {
                     case 'title':
                       return (
-                        <div className="flex items-center gap-2">
-                          <span>{song.title || '제목 없음'}</span>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="truncate">{song.title || '제목 없음'}</span>
                           {!hasWaveform && isGenerating && (
-                            <span className="text-xs text-text-muted italic">
+                            <span className="text-xs text-text-muted italic flex-shrink-0">
                               (웨이브폼 생성중...)
                             </span>
                           )}
                         </div>
                       );
                     case 'artist':
-                      return song.artist || '아티스트 없음';
+                      return <span className="block truncate">{song.artist || '아티스트 없음'}</span>;
                     case 'album':
-                      return song.album || '앨범 없음';
+                      return <span className="block truncate">{song.album || '앨범 없음'}</span>;
                     case 'duration':
-                      return formatDuration(song.duration);
+                      return <span className="block truncate">{formatDuration(song.duration)}</span>;
                     case 'year':
-                      return song.year ? song.year.toString() : '--';
+                      return <span className="block truncate">{song.year ? song.year.toString() : '--'}</span>;
                     case 'genre':
-                      return song.genre || '장르 없음';
+                      return <span className="block truncate">{song.genre || '장르 없음'}</span>;
                     case 'file_path':
-                      return <span className="text-xs font-mono">{song.file_path}</span>;
+                      return <span className="block truncate text-xs font-mono">{song.file_path}</span>;
                     case 'created_at':
-                      return new Date(song.created_at).toLocaleDateString('ko-KR');
+                      return <span className="block truncate">{new Date(song.created_at).toLocaleDateString('ko-KR')}</span>;
                     case 'updated_at':
-                      return new Date(song.updated_at).toLocaleDateString('ko-KR');
+                      return <span className="block truncate">{new Date(song.updated_at).toLocaleDateString('ko-KR')}</span>;
                     default:
-                      return '--';
+                      return <span className="block truncate">--</span>;
                   }
                 };
                 
@@ -256,16 +318,47 @@ export const PlaylistView = () => {
                     }`}
                     onDoubleClick={() => handleSongDoubleClick(song)}
                   >
-                    {visibleColumns.map((columnKey) => (
-                      <td
-                        key={columnKey}
-                        className={`px-4 py-3 text-sm ${
-                          columnKey === 'title' ? 'text-text-primary' : 'text-text-muted'
-                        }`}
-                      >
-                        {renderCell(columnKey)}
-                      </td>
-                    ))}
+                    {visibleColumns.map((columnKey) => {
+                      const width = tempColumnWidths[columnKey] || 150;
+                      
+                      // 메타데이터가 있는지 확인
+                      const hasValue = (() => {
+                        switch (columnKey) {
+                          case 'title':
+                            return !!song.title;
+                          case 'artist':
+                            return !!song.artist;
+                          case 'album':
+                            return !!song.album;
+                          case 'duration':
+                            return song.duration !== null && song.duration !== undefined;
+                          case 'year':
+                            return song.year !== null && song.year !== undefined;
+                          case 'genre':
+                            return !!song.genre;
+                          case 'file_path':
+                            return !!song.file_path;
+                          case 'created_at':
+                            return !!song.created_at;
+                          case 'updated_at':
+                            return !!song.updated_at;
+                          default:
+                            return false;
+                        }
+                      })();
+                      
+                      return (
+                        <td
+                          key={columnKey}
+                          style={{ width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` }}
+                          className={`px-4 py-3 text-sm overflow-hidden text-ellipsis whitespace-nowrap ${
+                            hasValue ? 'text-text-primary' : 'text-text-muted'
+                          }`}
+                        >
+                          {renderCell(columnKey)}
+                        </td>
+                      );
+                    })}
                   </tr>
                 );
               })}

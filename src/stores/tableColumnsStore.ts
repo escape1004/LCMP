@@ -18,14 +18,32 @@ export type ColumnKey = typeof AVAILABLE_COLUMNS[number]['key'];
 
 interface TableColumnsStore {
   visibleColumns: ColumnKey[];
+  columnWidths: Record<ColumnKey, number>;
   isLoading: boolean;
   loadColumns: () => Promise<void>;
   setColumns: (columns: ColumnKey[]) => Promise<void>;
   toggleColumn: (column: ColumnKey) => Promise<void>;
+  loadColumnWidths: () => Promise<void>;
+  setColumnWidth: (column: ColumnKey, width: number) => Promise<void>;
+  setColumnWidths: (widths: Record<ColumnKey, number>) => Promise<void>;
 }
+
+// 기본 컬럼 너비 (픽셀)
+const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = {
+  title: 200,
+  artist: 150,
+  album: 150,
+  duration: 100,
+  year: 100,
+  genre: 120,
+  file_path: 300,
+  created_at: 120,
+  updated_at: 120,
+};
 
 export const useTableColumnsStore = create<TableColumnsStore>((set, get) => ({
   visibleColumns: ['title', 'artist', 'album', 'duration'], // 기본값
+  columnWidths: { ...DEFAULT_COLUMN_WIDTHS },
   isLoading: false,
 
   loadColumns: async () => {
@@ -58,6 +76,33 @@ export const useTableColumnsStore = create<TableColumnsStore>((set, get) => ({
     // 최소 1개 컬럼은 유지
     if (newColumns.length > 0) {
       await setColumns(newColumns);
+    }
+  },
+
+  loadColumnWidths: async () => {
+    try {
+      const widths = await invoke<Record<string, number>>('get_table_column_widths');
+      // 기본값과 병합
+      set((state) => ({
+        columnWidths: { ...DEFAULT_COLUMN_WIDTHS, ...widths },
+      }));
+    } catch (error) {
+      console.error('Failed to load column widths:', error);
+    }
+  },
+
+  setColumnWidth: async (column: ColumnKey, width: number) => {
+    const { columnWidths, setColumnWidths } = get();
+    const newWidths = { ...columnWidths, [column]: width };
+    await setColumnWidths(newWidths);
+  },
+
+  setColumnWidths: async (widths: Record<ColumnKey, number>) => {
+    try {
+      await invoke('set_table_column_widths', { widths });
+      set({ columnWidths: widths });
+    } catch (error) {
+      console.error('Failed to save column widths:', error);
     }
   },
 }));
