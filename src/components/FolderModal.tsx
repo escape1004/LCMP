@@ -20,7 +20,7 @@ export const FolderModal = ({ isOpen, onClose, onConfirm, onDelete, folder }: Fo
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleteInput, setDeleteInput] = useState("");
+  const [deleteChecked, setDeleteChecked] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
@@ -36,7 +36,7 @@ export const FolderModal = ({ isOpen, onClose, onConfirm, onDelete, folder }: Fo
       }
       setError("");
       setShowDeleteConfirm(false);
-      setDeleteInput("");
+      setDeleteChecked(false);
     }
   }, [isOpen, folder]);
 
@@ -179,9 +179,6 @@ export const FolderModal = ({ isOpen, onClose, onConfirm, onDelete, folder }: Fo
                       <div className="text-danger font-semibold mb-2">
                         이 작업은 되돌릴 수 없습니다.
                       </div>
-                      <div className="text-text-muted text-sm">
-                        아래에 <span className="font-semibold">폴더를 삭제하겠습니다</span>를 입력하세요.
-                      </div>
                     </div>
                     
                     {isDeleting && (
@@ -195,21 +192,24 @@ export const FolderModal = ({ isOpen, onClose, onConfirm, onDelete, folder }: Fo
                       </div>
                     )}
                     
-                    <Input
-                      type="text"
-                      value={deleteInput}
-                      onChange={(e) => setDeleteInput(e.target.value)}
-                      className="w-full mb-3"
-                      placeholder="폴더를 삭제하겠습니다"
-                      disabled={isDeleting}
-                    />
+                    <label className="flex items-center space-x-2 w-full mb-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={deleteChecked}
+                        onChange={(e) => setDeleteChecked(e.target.checked)}
+                        disabled={isDeleting}
+                      />
+                      <span className="text-sm text-text-primary">
+                        폴더를 삭제하겠습니다
+                      </span>
+                    </label>
                     <div className="flex w-full gap-2">
                       <Button
                         variant="ghost"
                         className="flex-1 text-text-primary hover:bg-hover"
                         onClick={() => {
                           setShowDeleteConfirm(false);
-                          setDeleteInput("");
+                          setDeleteChecked(false);
                         }}
                         disabled={isDeleting}
                       >
@@ -218,7 +218,7 @@ export const FolderModal = ({ isOpen, onClose, onConfirm, onDelete, folder }: Fo
                       <Button
                         variant="destructive"
                         className="flex-1 bg-danger hover:bg-danger/90 text-white disabled:bg-danger/50 disabled:text-white/50"
-                        disabled={deleteInput !== "폴더를 삭제하겠습니다" || isDeleting}
+                        disabled={!deleteChecked || isDeleting}
                         onClick={async () => {
                           try {
                             setIsDeleting(true);
@@ -226,7 +226,7 @@ export const FolderModal = ({ isOpen, onClose, onConfirm, onDelete, folder }: Fo
                               await onDelete();
                             }
                             setShowDeleteConfirm(false);
-                            setDeleteInput("");
+                            setDeleteChecked(false);
                             onClose();
                           } catch (error) {
                             console.error("Failed to delete folder:", error);

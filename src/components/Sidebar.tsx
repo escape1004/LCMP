@@ -3,6 +3,7 @@ import { LayoutDashboard, Plus, Settings } from "lucide-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { useFolderStore } from "../stores/folderStore";
 import { usePlaylistStore } from "../stores/playlistStore";
+import { useQueueStore } from "../stores/queueStore";
 import { FolderModal } from "./FolderModal";
 import { PlaylistModal } from "./PlaylistModal";
 import { Tooltip } from "./ui/tooltip";
@@ -29,6 +30,8 @@ export const Sidebar = () => {
     removePlaylist,
     selectPlaylist,
   } = usePlaylistStore();
+
+  const { setQueueOpen } = useQueueStore();
 
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
   const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState(false);
@@ -207,6 +210,7 @@ export const Sidebar = () => {
                         onClick={() => {
                           selectFolder(folder.id);
                           selectPlaylist(null);
+                          setQueueOpen(false);
                         }}
                         className={`flex items-center justify-between px-3 py-2 rounded cursor-grab active:cursor-grabbing transition-colors group ${
                           selectedFolderId === folder.id
@@ -281,6 +285,7 @@ export const Sidebar = () => {
                         onClick={() => {
                           selectPlaylist(playlist.id);
                           selectFolder(null);
+                          setQueueOpen(false);
                         }}
                         className={`flex items-center justify-between px-3 py-2 rounded cursor-grab active:cursor-grabbing transition-colors group ${
                           selectedPlaylistId === playlist.id

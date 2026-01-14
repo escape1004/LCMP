@@ -101,7 +101,7 @@ export const ColumnSelectorDialog = ({ open, onOpenChange }: ColumnSelectorDialo
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h2 className="text-lg font-bold text-text-primary">
-            표시할 컬럼 선택
+            표시할 컬럼
           </h2>
           <button
             onClick={handleCancel}
