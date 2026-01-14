@@ -6,6 +6,7 @@ import { usePlaylistStore } from '../stores/playlistStore';
 import { useSongStore } from '../stores/songStore';
 import { useQueueStore } from '../stores/queueStore';
 import { useTableColumnsStore, AVAILABLE_COLUMNS, ColumnKey } from '../stores/tableColumnsStore';
+import { useToastStore } from '../stores/toastStore';
 import { Song } from '../types';
 import { invoke } from '@tauri-apps/api/tauri';
 import { ColumnSelectorDialog } from './ColumnSelectorDialog';
@@ -57,6 +58,7 @@ export const PlaylistView = () => {
   }, [storeSongs]);
   
   const { playSong, addMultipleToQueue, clearQueue, playSongAtIndex } = useQueueStore();
+  const { showToast } = useToastStore();
   const [totalSize, setTotalSize] = useState<number>(0);
   const [isLoadingSize, setIsLoadingSize] = useState(false);
   
@@ -420,12 +422,18 @@ export const PlaylistView = () => {
 
   // 현재 보이는 노래들(검색 결과 포함)을 대기열에 추가 (웨이폼이 있는 노래만 추가)
   const handleAddAllToQueue = async () => {
-    if (sortedSongs.length === 0) return;
+    if (sortedSongs.length === 0) {
+      showToast('추가할 노래가 없습니다.');
+      return;
+    }
     // 웨이폼이 DB에 있는 노래만 필터링
     const songsWithWaveform = sortedSongs.filter(
       (song) => song.waveform_data !== null && song.waveform_data.trim() !== ''
     );
-    if (songsWithWaveform.length === 0) return;
+    if (songsWithWaveform.length === 0) {
+      showToast('웨이폼 데이터가 있는 노래가 없습니다.');
+      return;
+    }
     // 기존 대기열 초기화 후 새 노래들 추가
     clearQueue();
     addMultipleToQueue(songsWithWaveform);
@@ -455,16 +463,14 @@ export const PlaylistView = () => {
               </span>
             )}
           </h2>
-          {sortedSongs.length > 0 && (
-            <Tooltip content="모든 노래를 대기열에 추가">
-              <button
-                onClick={handleAddAllToQueue}
-                className="w-8 h-8 rounded-full hover:bg-bg-sidebar flex items-center justify-center transition-colors duration-150"
-              >
-                <Play className="w-4 h-4 text-text-primary fill-text-primary ml-0.5" />
-              </button>
-            </Tooltip>
-          )}
+          <Tooltip content="모든 노래를 대기열에 추가">
+            <button
+              onClick={handleAddAllToQueue}
+              className="w-8 h-8 rounded-full hover:bg-bg-sidebar flex items-center justify-center transition-colors duration-150"
+            >
+              <Play className="w-4 h-4 text-text-primary fill-text-primary ml-0.5" />
+            </button>
+          </Tooltip>
         </div>
       </div>
 

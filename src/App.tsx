@@ -4,6 +4,7 @@ import { PlaylistView } from "./components/PlaylistView";
 import { PlayerControls } from "./components/PlayerControls";
 import { QueueView } from "./components/QueueView";
 import { WaveformWidget } from "./components/WaveformWidget";
+import { ToastContainer } from "./components/ui/toast";
 import { useQueueStore } from "./stores/queueStore";
 import { usePlayerStore } from "./stores/playerStore";
 
@@ -40,6 +41,9 @@ function App() {
 
       {/* Player Controls Bar */}
       <PlayerControls />
+
+      {/* Toast Container */}
+      <ToastContainer />
     </div>
   );
 }

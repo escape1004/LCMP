@@ -7,7 +7,7 @@
     "withGlobalTauri": false
   },
   "package": {
-    "productName": "Local Music Player",
+    "productName": "LCMP",
     "version": "0.1.0"
   },
   "tauri": {
@@ -58,7 +58,7 @@
       {
         "fullscreen": false,
         "resizable": true,
-        "title": "Local Music Player",
+        "title": "LCMP",
         "width": 1200,
         "height": 800,
         "minWidth": 800,
