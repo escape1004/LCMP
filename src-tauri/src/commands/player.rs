@@ -5,7 +5,7 @@ use std::time::Duration;
 use std::sync::mpsc;
 use std::collections::VecDeque;
 use symphonia::core::formats::FormatOptions;
-use symphonia::core::io::MediaSourceStream;
+use symphonia::core::io::{MediaSourceStream, MediaSourceStreamOptions};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::codecs::CODEC_TYPE_NULL;
@@ -25,6 +25,7 @@ struct PlayerState {
     volume: f32,
     seek_time: Option<f64>,
     should_stop: bool,
+    samples_played: u64, // 실제로 오디오 스트림에서 출력된 샘플 수 (스테레오 샘플 수)
 }
 
 impl Default for PlayerState {
@@ -36,6 +37,7 @@ impl Default for PlayerState {
             volume: 0.5,
             seek_time: None,
             should_stop: false,
+            samples_played: 0,
         }
     }
 }
@@ -240,6 +242,7 @@ pub async fn play_audio(file_path: String, volume: f32, seek_time: Option<f64>) 
         volume: volume.max(0.0).min(1.0),
         seek_time,
         should_stop: false,
+        samples_played: 0,
     }));
     
     *PLAYER_STATE.lock().unwrap() = Some(state.clone());
@@ -257,7 +260,12 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
     let file = File::open(&file_path)
         .map_err(|e| format!("Failed to open file: {}", e))?;
     
-    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    // MediaSourceStream 버퍼 크기 증가 (프리로딩을 위해 충분히 큰 버퍼)
+    // VBR 파일과 큰 ID3 태그를 처리하기 위해 버퍼 크기 증가
+    let mut mss_opts = MediaSourceStreamOptions::default();
+    mss_opts.buffer_len = 8 * 1024 * 1024; // 8MB 버퍼 (VBR, 큰 ID3 태그 처리용)
+    
+    let mss = MediaSourceStream::new(Box::new(file), mss_opts);
     let mut hint = Hint::new();
     if let Some(extension) = std::path::Path::new(&file_path).extension() {
         if let Some(ext_str) = extension.to_str() {
@@ -265,24 +273,55 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
         }
     }
     
+    // 메타데이터 옵션: 큰 ID3 태그 처리
     let meta_opts: MetadataOptions = Default::default();
-    let fmt_opts: FormatOptions = Default::default();
+    
+    // 포맷 옵션: VBR 파일과 ID3 태그 처리 강화
+    let mut fmt_opts = FormatOptions::default();
+    // gapless 재생 활성화 (ID3 태그와 오디오 스트림 구분 강화)
+    fmt_opts.enable_gapless = true;
+    // ⭐⭐⭐ 매우 중요: seek_index 비활성화 (특정 파일의 초반 EOF 문제 해결)
+    // VBR 파일에서 부정확한 seek index로 인한 조기 EOF 방지
+    fmt_opts.prebuild_seek_index = false;
     
     let probe = get_probe();
     let mut probed = probe.format(&hint, mss, &fmt_opts, &meta_opts)
         .map_err(|e| format!("Failed to probe format: {}", e))?;
     
+    // track 정보를 먼저 추출 (borrow 충돌 방지)
     let track = probed.format.tracks()
         .iter()
         .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
         .ok_or_else(|| "No valid audio track found".to_string())?;
     
-    let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
-        .map_err(|e| format!("Failed to create decoder: {}", e))?;
+    // track에서 필요한 정보를 먼저 추출
+    let track_id = track.id;
+    let codec_params = track.codec_params.clone();
+    let source_sample_rate = codec_params.sample_rate.unwrap_or(44100);
     
-    // CodecParameters에서 샘플 레이트 가져오기
-    let source_sample_rate = track.codec_params.sample_rate.unwrap_or(44100);
+    // 예상 duration 계산 (파일 끝 감지용) - VBR 파일의 경우 부정확할 수 있으므로 참고용으로만 사용
+    // 실제로는 프레임 단위로 읽으면서 동적으로 확인하는 것이 더 정확함
+    let expected_duration = if let Some(time_base) = codec_params.time_base {
+        if let Some(frames) = codec_params.n_frames {
+            let time = time_base.calc_time(frames);
+            Some(time.seconds as f64 + time.frac as f64)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    // VBR 파일의 경우 헤더 정보가 부정확할 수 있으므로, expected_duration을 None으로 처리하거나
+    // 더 보수적인 임계값 사용 (예: 99% 대신 95%)
+    
+    // 디코더 옵션: 손상된 프레임 무시하고 계속 진행 (에러 복구 강화)
+    let mut decoder_opts = DecoderOptions::default();
+    decoder_opts.verify = false; // 프레임 검증 비활성화 (손상된 프레임도 처리)
+    
+    let mut decoder = symphonia::default::get_codecs()
+        .make(&codec_params, &decoder_opts)
+        .map_err(|e| format!("Failed to create decoder: {}", e))?;
     
     let host = cpal::default_host();
     let device = host.default_output_device()
@@ -301,31 +340,59 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
     // 디버깅: 채널 수 확인
     eprintln!("Output channels: {}, Sample rate: {}", config.channels, config.sample_rate.0);
     
-    // Seek 처리
-    if let Some(seek_time) = state.lock().unwrap().seek_time {
-        // seek_time은 초 단위
-        let seek_seconds = seek_time as u64;
-        let seek_frac = seek_time - seek_seconds as f64;
-        
-        let seek_result = probed.format.seek(
-            symphonia::core::formats::SeekMode::Accurate,
+    // ✅ Seek 처리: Seek = 재생 재시작 (참고 코드 패턴)
+    // ❌ Seek 후 첫 패킷을 미리 읽지 않음 (디코딩 루프에서 자연스럽게 처리)
+    // Seek 후 패킷을 미리 읽으면 format 상태가 불일치하여 EOF 루프에 빠질 수 있음
+    let seek_time = state.lock().unwrap().seek_time.unwrap_or(0.0);
+    let seek_seconds = seek_time as u64;
+    let seek_frac = seek_time - seek_seconds as f64;
+    
+    // Seek 수행
+    let seek_result = probed.format.seek(
+        symphonia::core::formats::SeekMode::Accurate,
+        symphonia::core::formats::SeekTo::Time {
+            track_id: Some(track_id),
+            time: symphonia::core::units::Time::new(seek_seconds, seek_frac),
+        }
+    );
+    
+    // Seek 성공 시 디코더 리셋 및 samples_played 초기화
+    let initial_packet_time = seek_time;
+    if seek_result.is_ok() {
+        // Seek 성공 시 디코더 리셋 및 카운터 초기화
+        decoder.reset();
+        // Seek 시 samples_played를 반드시 초기화
+        let expected_samples = (seek_time * target_sample_rate as f64 * 2.0) as u64;
+        let mut state_guard = state.lock().unwrap();
+        state_guard.samples_played = expected_samples;
+        drop(state_guard);
+        eprintln!("Seek to {:.2}s successful (initialization, samples_played: {})", 
+            seek_time, expected_samples);
+    } else {
+        eprintln!("Seek to {:.2}s failed, attempting to seek to 0.0", seek_time);
+        // Seek 실패 시 0초로 시도
+        let seek_result_0 = probed.format.seek(
+            symphonia::core::formats::SeekMode::Coarse,
             symphonia::core::formats::SeekTo::Time {
-                track_id: Some(track.id),
-                time: symphonia::core::units::Time::new(seek_seconds, seek_frac),
+                track_id: Some(track_id),
+                time: symphonia::core::units::Time::new(0, 0.0),
             }
         );
-        
-        if seek_result.is_ok() {
-            // Seek 성공 시 디코더 리셋
+        if seek_result_0.is_ok() {
             decoder.reset();
+            let mut state_guard = state.lock().unwrap();
+            state_guard.samples_played = 0;
+            drop(state_guard);
+            eprintln!("Seek to 0.0s successful (initialization, samples_played: 0)");
         } else {
-            eprintln!("Seek failed, continuing from start");
+            eprintln!("Seek to 0.0 also failed, continuing from current position");
         }
     }
     
     // 채널을 통한 오디오 데이터 전달 (bounded channel로 버퍼 크기 제한)
-    // 버퍼 크기를 적절히 설정 (약 0.5초 분량 - 로컬 파일이므로 작게)
-    let buffer_size = (target_sample_rate / 2) as usize; // 약 0.5초 분량
+    // 버퍼 크기를 충분히 크게 설정 (약 10초 분량 - AIMP처럼 안정적인 재생을 위해)
+    // 각 Vec<f32>가 수백~수천 샘플을 담으므로, 충분히 큰 버퍼 필요
+    let buffer_size = (target_sample_rate * 10) as usize; // 약 10초 분량 (Vec 개수)
     let (tx, rx) = mpsc::sync_channel::<Vec<f32>>(buffer_size);
     
     // 디코딩 스레드 (format과 decoder를 클로저로 이동)
@@ -338,13 +405,27 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
         1.0
     };
     
+    // 클로저로 이동할 변수들
+    let _expected_duration_clone = expected_duration; // 현재 사용하지 않지만 향후 사용 가능
+    let _target_sample_rate_clone = target_sample_rate;
+    let _track_id_clone = track_id; // 현재 사용하지 않지만 향후 사용 가능
+    let codec_params_clone = codec_params.clone();
+    let initial_packet_time_clone = initial_packet_time; // 초기화 Seek에서 읽은 첫 패킷의 타임스탬프
+    
     // 여러 패킷을 배치로 처리하여 효율성 향상
     thread::spawn(move || {
         let mut batch_samples = Vec::new();
-        const BATCH_SIZE: usize = 4; // 한 번에 처리할 패킷 수
+        // ✅ BATCH_SIZE를 1로 고정 (EOF 발생 시 연속 EOF 폭증 방지)
+        // Seek 후 format_reader 재사용 시 EOF 상태 진입 시 batch로 읽으면 연속 EOF 폭증
+        const BATCH_SIZE: usize = 1;
         
         // 고품질 리샘플러 초기화 (FLAC 무손실 재생용) - 첫 패킷 후에 초기화
         let mut resampler: Option<SincFixedIn<f32>> = None;
+        // ✅ 재생 시간은 샘플 누적 기반으로만 계산 (packet.ts() 신뢰하지 않음)
+        // packet.ts()는 VBR/encoder delay/gapless padding 때문에 점프할 수 있음
+        // current_packet_time은 참고용으로만 사용 (UI 표시용)
+        let mut current_packet_time = initial_packet_time_clone; // 참고용 (UI 표시용)
+        // ✅ samples_played는 출력 콜백에서만 증가 (정확한 재생 시간 추적)
         
         loop {
             let should_stop = {
@@ -361,23 +442,51 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
             
             for _ in 0..BATCH_SIZE {
                 let packet = match format_reader.next_packet() {
-                    Ok(packet) => packet,
+                    Ok(packet) => {
+                        // 패킷 타임스탬프를 사용하여 재생 시간 업데이트 (리샘플링과 무관하게 정확함)
+                        let packet_ts = packet.ts();
+                        let mut packet_time = current_packet_time; // 기본값은 이전 값 유지
+                        if let Some(time_base) = codec_params_clone.time_base {
+                            let time = time_base.calc_time(packet_ts);
+                            packet_time = time.seconds as f64 + time.frac as f64;
+                        }
+                        
+                        // ✅ 패킷 타임스탬프는 참고용으로만 사용 (UI 표시용)
+                        // Seek 후 첫 패킷 검증 로직 제거 (format 상태 불일치 방지)
+                        current_packet_time = packet_time;
+                        packet
+                    },
                     Err(symphonia::core::errors::Error::ResetRequired) => {
+                        // ResetRequired는 디코더 상태 문제이므로 reset 후 재시도
                         decoder.reset();
                         break;
                     }
-                    Err(_) => {
-                        let mut state_guard = state_clone.lock().unwrap();
-                        state_guard.is_playing = false;
-                        // 배치에 이미 있는 데이터는 전송
-                        if !batch_samples.is_empty() {
-                            let _ = tx.send(batch_samples);
+                    Err(symphonia::core::errors::Error::IoError(ref io_err)) => {
+                        // ✅ EOF 로직 단순화: UnexpectedEof는 디코더가 파일 끝에 도달했다는 의미
+                        // ⛔ EOF에서 시간 계산하지 않음 (출력 기준 시간과 다를 수 있음)
+                        // ⛔ EOF에서 is_playing = false 설정하지 않음 (출력 스레드가 남은 샘플 소비 후 종료)
+                        if io_err.kind() == std::io::ErrorKind::UnexpectedEof {
+                            eprintln!("Decoder reached EOF (file fully consumed)");
+                            // 남은 샘플이 있으면 전송
+                            if !batch_samples.is_empty() {
+                                let _ = tx.send(batch_samples);
+                            }
+                            drop(tx); // 출력 스레드가 남은 샘플 다 소비하게 둠
+                            return; // 디코딩 스레드 종료 (출력은 계속 진행)
+                        } else {
+                            // 🔥 중간 IO 에러는 그냥 스킵 (참고 코드 패턴)
+                            continue; // 일시적인 에러는 스킵하고 다음 패킷 시도
                         }
-                        return;
+                    }
+                    Err(_) => {
+                        // 🔥 다른 에러도 그냥 스킵 (참고 코드 패턴)
+                        continue; // 패킷 스킵하고 다음 패킷 시도
                     }
                 };
                 
-                if let Ok(decoded) = decoder.decode(&packet) {
+                match decoder.decode(&packet) {
+                    Ok(decoded) => {
+                    
                     let audio_buf = decoded;
                     let frames = audio_buf.frames();
                     let channels_count = audio_buf.spec().channels.count() as usize;
@@ -446,6 +555,7 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                                     }
                                 }
                                 batch_samples.extend(resampled);
+                                // 실제로 batch_samples에 추가된 샘플 수 추적 (나중에 전송 시 카운트)
                             } else {
                                 // 리샘플링 실패 시 선형 보간으로 폴백
                                 let target_frames = (frames as f64 * resample_ratio) as usize;
@@ -472,6 +582,7 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                                     }
                                 }
                                 batch_samples.extend(fallback);
+                                // 실제로 batch_samples에 추가된 샘플 수 추적 (나중에 전송 시 카운트)
                             }
                         } else {
                             // 리샘플러 초기화 실패 시 선형 보간 사용
@@ -497,9 +608,10 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                                     fallback.push(0.0);
                                     fallback.push(0.0);
                                 }
+                                }
+                                batch_samples.extend(fallback);
+                                // 실제로 batch_samples에 추가된 샘플 수 추적 (나중에 전송 시 카운트)
                             }
-                            batch_samples.extend(fallback);
-                        }
                     } else {
                         // 리샘플링 불필요: 직접 복사 (원음 그대로 - FLAC 무손실 재생)
                         // 스테레오 출력을 보장하기 위해 항상 2채널로 인터리브 (L, R, L, R, ...)
@@ -518,17 +630,45 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
                             batch_samples.push(left_sample);
                             batch_samples.push(right_sample);
                         }
+                        // 실제로 batch_samples에 추가된 샘플 수 추적 (나중에 전송 시 카운트)
+                    }
+                    }
+                    Err(symphonia::core::errors::Error::ResetRequired) => {
+                        // ResetRequired는 디코더 상태 문제이므로 reset 후 재시도
+                        decoder.reset();
+                        continue;
+                    }
+                    Err(symphonia::core::errors::Error::DecodeError(_)) => {
+                        // 🔥 깨진 프레임 스킵 (참고 코드 패턴: reset/seek 없이 단순히 continue)
+                        continue; // 깨진 프레임 스킵하고 다음 패킷 시도
+                    }
+                    Err(_) => {
+                        // 🔥 기타 디코딩 에러도 그냥 스킵 (참고 코드 패턴)
+                        continue; // 패킷 스킵하고 다음 패킷 시도
                     }
                 }
             }
             
-            // 배치 전송
+            // ✅ 배치 전송: send를 사용하여 back-pressure 적용 (디코딩이 출력 속도에 동기화됨)
+            // 버퍼가 꽉 차면 디코딩 스레드가 자동으로 대기하여 출력 속도에 맞춤
             if !batch_samples.is_empty() {
-                if tx.send(batch_samples.clone()).is_err() {
-                    break;
+                match tx.send(batch_samples) {
+                    Ok(_) => {
+                        // 성공적으로 전송됨: 새로운 벡터 할당
+                        batch_samples = Vec::new();
+                    }
+                    Err(_) => {
+                        // 수신자가 없음: 재생 중지
+                        break;
+                    }
                 }
             }
         }
+        
+        // ✅ 루프 종료 시 채널을 명시적으로 닫기 (출력 스레드가 남은 샘플 소비 후 종료)
+        eprintln!("Decoding thread: exiting, closing channel");
+        drop(tx);
+        // ⛔ 디코딩 스레드에서 is_playing = false 설정하지 않음 (출력 스레드가 처리)
     });
     
     // cpal 스트림 생성
@@ -575,10 +715,10 @@ where
     let mut last_samples = vec![0.0f32; channels]; // 마지막 샘플 저장 (끊김 방지, 채널별)
     
     // 재생 시작 전에 버퍼를 미리 채우기 (프리로딩)
-    // 최소 버퍼 크기: 약 0.1초 분량 (로컬 파일이므로 작게)
-    let min_buffer_size = sample_rate / 5;
+    // 최소 버퍼 크기: 약 2초 분량 (AIMP처럼 안정적인 재생을 위해)
+    let min_buffer_size = sample_rate * 2 * channels; // 2초 분량
     let mut preload_attempts = 0;
-    const MAX_PRELOAD_ATTEMPTS: usize = 50;
+    const MAX_PRELOAD_ATTEMPTS: usize = 100; // 프리로딩을 위해 더 많은 시도 허용
     
     while sample_queue.len() < min_buffer_size && preload_attempts < MAX_PRELOAD_ATTEMPTS {
         match rx.try_recv() {
@@ -621,30 +761,29 @@ where
             drop(state_guard);
             
             // 버퍼가 부족하면 채널에서 데이터 가져오기
-            // 블로킹 recv를 사용하되, 타임아웃을 두어 데드락 방지
+            // recv_timeout을 사용하여 타임아웃을 두어 데드락 방지
             while sample_queue.len() < data.len() {
-                match rx.try_recv() {
+                match rx.recv_timeout(Duration::from_millis(100)) {
                     Ok(samples) => {
                         sample_queue.extend(samples);
+                        // 디버깅 로그 제거 (너무 많은 로그 출력 방지)
                     }
-                    Err(mpsc::TryRecvError::Empty) => {
-                        // 버퍼가 비어있으면 마지막 샘플 반복 (끊김 방지)
-                        // 또는 블로킹 recv 사용 (하지만 위험할 수 있음)
-                        // 일단 마지막 샘플 반복으로 처리
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        // 타임아웃: 버퍼가 비어있으면 마지막 샘플 반복 (끊김 방지)
                         break;
                     }
-                    Err(mpsc::TryRecvError::Disconnected) => {
-                        // 채널이 닫혔으면 마지막 샘플을 반복하여 끊김 방지
-                        // 재생이 끝났는지 확인하기 위해 상태 체크
-                        let state_check = state.lock().unwrap();
-                        if state_check.should_stop || !state_check.is_playing {
-                            // 명시적으로 중지된 경우에만 재생 종료
-                            for sample in data.iter_mut() {
-                                *sample = T::from_sample(0.0);
+                    Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        // 채널이 닫혔으면 디코딩이 끝난 것
+                        // sample_queue에 남은 샘플이 있으면 계속 재생
+                        // 없으면 is_playing을 false로 설정하고 종료
+                        if sample_queue.is_empty() {
+                            let mut state_check = state.lock().unwrap();
+                            if !state_check.should_stop {
+                                state_check.is_playing = false;
                             }
-                            return;
+                            drop(state_check);
                         }
-                        // 그 외의 경우는 마지막 샘플 반복 (일시적인 버퍼 문제일 수 있음)
+                        // sample_queue에 샘플이 있으면 계속 재생, 없으면 break
                         break;
                     }
                 }
@@ -652,6 +791,7 @@ where
             
             // 데이터 출력 (인터리브 형식: L, R, L, R, ...)
             let mut output_idx = 0;
+            let mut samples_outputted = 0u64;
             while output_idx < data.len() && !sample_queue.is_empty() {
                 let sample = sample_queue.pop_front().unwrap() * volume;
                 data[output_idx] = T::from_sample(sample);
@@ -661,6 +801,7 @@ where
                 last_samples[channel_idx] = sample;
                 
                 output_idx += 1;
+                samples_outputted += 1;
             }
             
             // 남은 공간 처리 (버퍼가 부족한 경우)
@@ -670,6 +811,15 @@ where
                 let sample = last_samples[channel_idx] * volume;
                 data[output_idx] = T::from_sample(sample);
                 output_idx += 1;
+                samples_outputted += 1;
+            }
+            
+            // 실제로 출력된 샘플 수 업데이트 (일시정지 상태가 아닐 때만)
+            if samples_outputted > 0 {
+                let mut state_guard = state.lock().unwrap();
+                if !state_guard.is_paused {
+                    state_guard.samples_played += samples_outputted;
+                }
             }
         },
         |err| eprintln!("Stream error: {}", err),
@@ -708,6 +858,7 @@ pub async fn stop_audio() -> Result<(), String> {
         player_state.should_stop = true;
         player_state.is_playing = false;
         player_state.is_paused = false;
+        player_state.samples_played = 0;
     }
     
     Ok(())

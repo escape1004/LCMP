@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Tooltip } from "./ui/tooltip";
 
 export const PlayerControls = () => {
-  const { isOpen, toggleQueue, queue, currentIndex, playNext, playPrevious } = useQueueStore();
+  const { isOpen, toggleQueue, queue, currentIndex, playNext, playPrevious, playSong } = useQueueStore();
   const { 
     isPlaying, 
     currentSong, 
@@ -37,6 +37,68 @@ export const PlayerControls = () => {
   const [isDraggingVolume, setIsDraggingVolume] = useState(false);
   const [dragVolume, setDragVolume] = useState(volume);
   const volumeBarRef = useRef<HTMLDivElement>(null);
+  
+  // 재생 종료 감지 및 다음 곡 자동 재생
+  const prevIsPlayingRef = useRef(isPlaying);
+  const hasAutoPlayedNextRef = useRef(false);
+  
+  useEffect(() => {
+    // 재생이 끝났는지 확인 (isPlaying이 true에서 false로 변경되고, currentTime이 duration에 근접)
+    const wasPlaying = prevIsPlayingRef.current;
+    const nowPlaying = isPlaying;
+    
+    // 재생이 끝났고 (true -> false), 곡이 있고, 시간이 duration에 근접한 경우
+    if (wasPlaying && !nowPlaying && currentSong && duration > 0) {
+      // currentTime이 duration의 95% 이상이거나, duration에 근접한 경우 (1초 이내)
+      const progress = currentTime / duration;
+      const timeDiff = Math.abs(currentTime - duration);
+      
+      // duration에 근접하거나 (1초 이내) 또는 currentTime이 duration의 95% 이상일 때
+      if (timeDiff <= 1.0 || currentTime >= duration || progress >= 0.95) {
+        // 중복 실행 방지
+        if (!hasAutoPlayedNextRef.current) {
+          hasAutoPlayedNextRef.current = true;
+          
+          // 약간의 지연 후 다음 곡 재생 (상태 업데이트 완료 대기)
+          setTimeout(() => {
+            // 다음 곡 재생 (반복 모드 고려)
+            const { repeat } = usePlayerStore.getState();
+            const state = useQueueStore.getState();
+            
+            if (state.currentIndex !== null) {
+              if (repeat === 'one') {
+                // 1곡 반복: 같은 곡 다시 재생
+                playSong(currentSong).catch(err => {
+                  console.error('Failed to replay song:', err);
+                  hasAutoPlayedNextRef.current = false;
+                });
+              } else if (state.currentIndex < state.queue.length - 1) {
+                // 다음 곡 재생
+                playNext().catch(err => {
+                  console.error('Failed to play next song:', err);
+                  hasAutoPlayedNextRef.current = false;
+                });
+              } else if (repeat === 'all') {
+                // 전체 반복: 처음부터 다시
+                useQueueStore.getState().playSongAtIndex(0).catch(err => {
+                  console.error('Failed to replay from start:', err);
+                  hasAutoPlayedNextRef.current = false;
+                });
+              } else {
+                // 반복 모드가 off이고 마지막 곡이면 플래그만 리셋
+                hasAutoPlayedNextRef.current = false;
+              }
+            }
+          }, 100); // 100ms 지연
+        }
+      }
+    } else if (nowPlaying) {
+      // 재생이 시작되면 플래그 리셋
+      hasAutoPlayedNextRef.current = false;
+    }
+    
+    prevIsPlayingRef.current = nowPlaying;
+  }, [isPlaying, currentSong, currentTime, duration, playNext, playSong]);
 
   const checkMarquee = () => {
     if (titleContainerRef.current && titleTextRef.current) {
