@@ -1,4 +1,4 @@
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, ChevronUp, Shuffle, Repeat, Repeat1 } from "lucide-react";
+﻿import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, ChevronUp, Shuffle, Repeat, Repeat1 } from "lucide-react";
 import { useQueueStore } from "../stores/queueStore";
 import { usePlayerStore } from "../stores/playerStore";
 import { useEffect, useRef, useState } from "react";
@@ -6,11 +6,10 @@ import { Tooltip } from "./ui/tooltip";
 import { invoke } from "@tauri-apps/api/tauri";
 
 export const PlayerControls = () => {
-  const { isOpen, toggleQueue, queue, currentIndex, playNext, playPrevious, playSong } = useQueueStore();
+  const { isOpen, toggleQueue, queue, currentIndex, playNext, playPrevious } = useQueueStore();
   const { 
     isPlaying, 
     currentSong, 
-    currentTime, 
     duration, 
     volume, 
     isMuted,
@@ -47,127 +46,6 @@ export const PlayerControls = () => {
   const [dragVolume, setDragVolume] = useState(volume);
   const volumeBarRef = useRef<HTMLDivElement>(null);
   
-  // 재생 종료 감지 및 다음 곡 자동 재생
-  const prevIsPlayingRef = useRef(isPlaying);
-  const hasAutoPlayedNextRef = useRef(false);
-  
-  useEffect(() => {
-    // 재생이 끝났는지 확인 (isPlaying이 true에서 false로 변경되고, currentTime이 duration에 근접)
-    const wasPlaying = prevIsPlayingRef.current;
-    const nowPlaying = isPlaying;
-    
-    // 재생이 끝났고 (true -> false), 곡이 있고, 시간이 duration에 근접한 경우
-    if (wasPlaying && !nowPlaying && currentSong && duration > 0) {
-      // currentTime이 duration의 95% 이상이거나, duration에 근접한 경우 (1초 이내)
-      const progress = currentTime / duration;
-      const timeDiff = Math.abs(currentTime - duration);
-      
-      // duration에 근접하거나 (1초 이내) 또는 currentTime이 duration의 95% 이상일 때
-      if (timeDiff <= 1.0 || currentTime >= duration || progress >= 0.95) {
-        // 중복 실행 방지
-        if (!hasAutoPlayedNextRef.current) {
-          hasAutoPlayedNextRef.current = true;
-          
-          // 약간의 지연 후 다음 곡 재생 (상태 업데이트 완료 대기)
-          setTimeout(() => {
-            // 다음 곡 재생 (반복 모드 고려)
-            const { repeat } = usePlayerStore.getState();
-            const state = useQueueStore.getState();
-            
-            if (state.currentIndex !== null) {
-              if (repeat === 'one') {
-                // 1곡 반복: 같은 곡 다시 재생
-                playSong(currentSong).catch(err => {
-                  console.error('Failed to replay song:', err);
-                  hasAutoPlayedNextRef.current = false;
-                });
-              } else if (state.currentIndex < state.queue.length - 1) {
-                // 다음 곡 재생
-                playNext().catch(err => {
-                  console.error('Failed to play next song:', err);
-                  hasAutoPlayedNextRef.current = false;
-                });
-              } else if (repeat === 'all') {
-                // 전체 반복: 처음부터 다시
-                useQueueStore.getState().playSongAtIndex(0).catch(err => {
-                  console.error('Failed to replay from start:', err);
-                  hasAutoPlayedNextRef.current = false;
-                });
-              } else {
-                // 반복 모드가 off이고 마지막 곡이면 일시정지 상태로 전환
-                hasAutoPlayedNextRef.current = false;
-                // 일시정지 상태로 전환
-                usePlayerStore.getState().pause().catch(err => {
-                  console.error('Failed to pause after last song:', err);
-                });
-              }
-            }
-          }, 100); // 100ms 지연
-        }
-      }
-    } else if (nowPlaying) {
-      // 재생이 시작되면 플래그 리셋
-      hasAutoPlayedNextRef.current = false;
-    }
-    
-    prevIsPlayingRef.current = nowPlaying;
-  }, [isPlaying, currentSong, currentTime, duration, playNext, playSong]);
-  
-  // ✅ 추가: currentTime이 duration에 도달했는지 주기적으로 확인 (백엔드 상태와 무관하게)
-  useEffect(() => {
-    if (!isPlaying || !currentSong || duration <= 0) {
-      return;
-    }
-    
-    // currentTime이 duration에 도달했는지 확인
-    const checkInterval = setInterval(() => {
-      const { currentTime: ct, duration: dur, isPlaying: playing } = usePlayerStore.getState();
-      
-      // 재생 중이고, currentTime이 duration에 도달했거나 약간 초과한 경우
-      if (playing && dur > 0 && ct >= dur - 0.1) {
-        // 백엔드 상태 확인 (isPlaying이 false인지)
-        // 하지만 백엔드에서 isPlaying 상태를 직접 확인할 수 없으므로,
-        // currentTime이 duration에 도달했다고 가정하고 다음 곡 재생
-        if (!hasAutoPlayedNextRef.current) {
-          hasAutoPlayedNextRef.current = true;
-          
-          setTimeout(() => {
-            const { repeat } = usePlayerStore.getState();
-            const state = useQueueStore.getState();
-            
-            if (state.currentIndex !== null) {
-              if (repeat === 'one') {
-                playSong(currentSong).catch(err => {
-                  console.error('Failed to replay song:', err);
-                  hasAutoPlayedNextRef.current = false;
-                });
-              } else if (state.currentIndex < state.queue.length - 1) {
-                playNext().catch(err => {
-                  console.error('Failed to play next song:', err);
-                  hasAutoPlayedNextRef.current = false;
-                });
-              } else if (repeat === 'all') {
-                useQueueStore.getState().playSongAtIndex(0).catch(err => {
-                  console.error('Failed to replay from start:', err);
-                  hasAutoPlayedNextRef.current = false;
-                });
-              } else {
-                // 반복 모드가 off이고 마지막 곡이면 일시정지 상태로 전환
-                hasAutoPlayedNextRef.current = false;
-                // 일시정지 상태로 전환
-                usePlayerStore.getState().pause().catch(err => {
-                  console.error('Failed to pause after last song:', err);
-                });
-              }
-            }
-          }, 100);
-        }
-      }
-    }, 500); // 500ms마다 확인
-    
-    return () => clearInterval(checkInterval);
-  }, [isPlaying, currentSong, duration, playNext, playSong]);
-
   const checkMarquee = () => {
     if (titleContainerRef.current && titleTextRef.current) {
       const container = titleContainerRef.current;

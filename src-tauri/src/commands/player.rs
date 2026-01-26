@@ -1,4 +1,4 @@
-use std::fs::File;
+﻿use std::fs::File;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::thread;
@@ -6,6 +6,7 @@ use std::time::Duration;
 use std::sync::mpsc;
 use std::collections::VecDeque;
 use std::mem;
+use serde::Serialize;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::{MediaSourceStream, MediaSourceStreamOptions};
 use symphonia::core::meta::MetadataOptions;
@@ -18,10 +19,18 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::Sample;
 use rubato::{Resampler, SincFixedIn, SincInterpolationType, SincInterpolationParameters, WindowFunction};
 use crate::database::get_connection;
+use tauri::Manager;
+
+#[derive(Clone, Serialize)]
+struct PlaybackFinishedPayload {
+    file_path: String,
+}
 
 // 실시간 오디오 콜백용 Atomic 상태 (Mutex 없이 접근 가능)
 struct RtState {
     should_stop: AtomicBool,
+    finished: AtomicBool,
+    decoder_finished: AtomicBool,
     is_paused: AtomicBool,
     volume: AtomicU32, // f32를 u32 bits로 저장
     samples_played: AtomicU64, // 프레임 수 (채널 수와 무관)
@@ -31,6 +40,8 @@ impl RtState {
     fn new(volume: f32) -> Self {
         Self {
             should_stop: AtomicBool::new(false),
+            finished: AtomicBool::new(false),
+            decoder_finished: AtomicBool::new(false),
             is_paused: AtomicBool::new(false),
             volume: AtomicU32::new(volume.to_bits()),
             samples_played: AtomicU64::new(0),
@@ -333,6 +344,21 @@ pub async fn extract_waveform(file_path: String, samples: usize) -> Result<Vec<f
         return Err("samples must be > 0".to_string());
     }
     
+    // DB cache check
+    if let Ok(conn) = get_connection() {
+        if let Ok(mut stmt) = conn.prepare("SELECT waveform_data FROM songs WHERE file_path = ?1") {
+            if let Ok(waveform_json) = stmt.query_row([&file_path], |row| row.get::<_, Option<String>>(0)) {
+                if let Some(json) = waveform_json {
+                    if !json.trim().is_empty() {
+                        if let Ok(cached) = serde_json::from_str::<Vec<f32>>(&json) {
+                            return Ok(cached);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     // 오디오 파일 열기
     let file = File::open(&file_path)
         .map_err(|e| format!("Failed to open file: {}", e))?;
@@ -489,7 +515,7 @@ pub async fn extract_waveform(file_path: String, samples: usize) -> Result<Vec<f
 }
 
 #[tauri::command]
-pub async fn play_audio(file_path: String, volume: f32, seek_time: Option<f64>) -> Result<(), String> {
+pub async fn play_audio(app_handle: tauri::AppHandle, file_path: String, volume: f32, seek_time: Option<f64>) -> Result<(), String> {
     // ✅ 기존 재생 중지 및 완전 종료 대기
     stop_audio().await.ok();
     
@@ -507,8 +533,9 @@ pub async fn play_audio(file_path: String, volume: f32, seek_time: Option<f64>) 
     *PLAYER_STATE.lock().map_err(|e| format!("Lock error: {}", e))? = Some(state.clone());
     
     // ✅ 재생 스레드 시작
+    let app_handle_clone = app_handle.clone();
     let _handle = thread::spawn(move || {
-        if let Err(e) = play_audio_thread(file_path, state) {
+        if let Err(e) = play_audio_thread(file_path, state, app_handle_clone) {
             eprintln!("Audio playback error: {}", e);
         }
     });
@@ -516,12 +543,13 @@ pub async fn play_audio(file_path: String, volume: f32, seek_time: Option<f64>) 
     Ok(())
 }
 
-fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Result<(), String> {
+fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>, app_handle: tauri::AppHandle) -> Result<(), String> {
     // rt_state 추출
     let rt_state = {
         let state_guard = state.lock().map_err(|e| format!("Lock error: {}", e))?;
         state_guard.rt_state.clone().ok_or_else(|| "RtState not initialized".to_string())?
     };
+    let file_path_for_event = file_path.clone();
     let file = File::open(&file_path)
         .map_err(|e| format!("Failed to open file: {}", e))?;
     
@@ -655,7 +683,7 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
     let (tx, rx) = mpsc::sync_channel::<Vec<f32>>(buffer_size);
     
     // 디코딩 스레드 (format과 decoder를 클로저로 이동)
-    let _state_clone = state.clone();
+    let state_clone = state.clone();
     let rt_state_clone = rt_state.clone(); // ✅ 디코딩 스레드에서 사용
     let mut format_reader = probed.format;
     let needs_resampling = source_sample_rate != target_sample_rate;
@@ -1022,6 +1050,9 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
         eprintln!("Decoding thread: exiting, closing channel");
         eprintln!("Debug stats: decoded_ok={}, decoded_err={}, sent_samples={}", decoded_ok, decoded_err, sent_samples);
         drop(tx);
+        if !rt_state_clone.should_stop.load(Ordering::Relaxed) {
+            rt_state_clone.decoder_finished.store(true, Ordering::Relaxed);
+        }
     });
     
     // cpal 스트림 생성 (rt_state 전달)
@@ -1044,6 +1075,13 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
         if rt_state.should_stop.load(Ordering::Relaxed) {
             break;
         }
+        if rt_state.finished.load(Ordering::Relaxed) {
+            if let Ok(mut state_guard) = state.lock() {
+                state_guard.is_playing = false;
+                state_guard.is_paused = false;
+            }
+            break;
+        }
         // is_playing은 Mutex로 체크 (비실시간)
         let state_guard = state.lock().map_err(|e| format!("Lock error: {}", e))?;
         if !state_guard.is_playing && !rt_state.is_paused.load(Ordering::Relaxed) {
@@ -1055,6 +1093,15 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>) -> Resul
     
     // 재생이 끝나면 스트림 정리
     drop(stream);
+    
+    if rt_state.finished.load(Ordering::Relaxed) && !rt_state.should_stop.load(Ordering::Relaxed) {
+        let _ = app_handle.emit_all(
+            "playback-finished",
+            PlaybackFinishedPayload {
+                file_path: file_path_for_event,
+            },
+        );
+    }
     
     Ok(())
 }
@@ -1126,6 +1173,13 @@ where
                 return;
             }
             
+            if rt_state.finished.load(Ordering::Relaxed) {
+                for sample in data.iter_mut() {
+                    *sample = T::from_sample(0.0);
+                }
+                return;
+            }
+            
             if rt_state.is_paused.load(Ordering::Relaxed) {
                 for sample in data.iter_mut() {
                     *sample = T::from_sample(0.0);
@@ -1150,11 +1204,13 @@ where
                         break;
                     }
                     Err(mpsc::TryRecvError::Disconnected) => {
-                        // 채널이 닫혔으면 디코이 끝난 것
-                        // sample_queue에 남은 샘플이 있으면 계속 재생
-                        // ✅ 디버그: 연결 끊김은 한 번만 로그 (모듈 스코프의 Atomic 사용)
+                        // 채널이 닫혔으면 디코딩 끝난 것
+                        // sample_queue에 남은 샘플이 있으면 계속 재생, 비었고 디코딩 종료면 자연 종료 플래그 설정
                         if DISCONNECT_LOGGED.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
                             eprintln!("[rt] rx disconnected");
+                        }
+                        if sample_queue.is_empty() && rt_state.decoder_finished.load(Ordering::Relaxed) {
+                            rt_state.finished.store(true, Ordering::Relaxed);
                         }
                         break;
                     }
@@ -1304,7 +1360,7 @@ pub async fn stop_audio() -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn seek_audio(time: f64) -> Result<(), String> {
+pub async fn seek_audio(app_handle: tauri::AppHandle, time: f64) -> Result<(), String> {
     let file_path_volume_and_paused = {
         let state_guard = PLAYER_STATE.lock().map_err(|e| format!("Lock error: {}", e))?;
         if let Some(state) = state_guard.as_ref() {
@@ -1321,7 +1377,7 @@ pub async fn seek_audio(time: f64) -> Result<(), String> {
     
     if let Some((file_path, volume, was_paused)) = file_path_volume_and_paused {
         // 일시정지 상태를 유지하기 위해 play_audio 후에 다시 일시정지
-        play_audio(file_path, volume, Some(time)).await?;
+        play_audio(app_handle, file_path, volume, Some(time)).await?;
         
         // 일시정지 상태였으면 다시 일시정지
         if was_paused {

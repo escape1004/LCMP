@@ -29,6 +29,7 @@ interface PlayerStore {
   loadWaveform: (song: Song) => Promise<void>;
   setDuration: (duration: number) => void;
   setCurrentTime: (time: number | ((prev: number) => number)) => void;
+  setIsPlaying: (isPlaying: boolean) => void;
   initializeAudio: (song: Song) => Promise<void>;
   cleanup: () => Promise<void>;
   loadSavedVolume: () => Promise<void>;
@@ -137,10 +138,21 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
 
           seek: async (time: number) => {
             try {
+              const { currentTime, duration, currentSong } = get();
+              if (!currentSong) return;
+              
+              const clampedTime = duration > 0
+                ? Math.max(0, Math.min(duration, time))
+                : Math.max(0, time);
+              
+              if (Math.abs(clampedTime - currentTime) < 0.05) {
+                return;
+              }
+              
               // 프론트엔드 시간을 먼저 업데이트 (즉시 반응)
-              set({ currentTime: time });
+              set({ currentTime: clampedTime });
               // Rust 백엔드에서 seek 실행 (비동기로 처리)
-              invoke('seek_audio', { time }).catch((error) => {
+              invoke('seek_audio', { time: clampedTime }).catch((error) => {
                 console.error('Seek error:', error);
               });
             } catch (error) {
@@ -268,6 +280,10 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         set({ currentTime: time });
       }
     },
+    
+    setIsPlaying: (isPlaying) => {
+      set({ isPlaying });
+    },
 
     initializeAudio: async (song: Song) => {
       await initializeAudio(song);
@@ -296,4 +312,3 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     },
   };
 });
-
