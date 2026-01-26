@@ -42,7 +42,17 @@ function App() {
         playerState.setCurrentTime(playerState.duration);
       }
       
-      if (queueState.currentIndex === null) return;
+      const queueIndexByFile = queueState.queue.findIndex(
+        (song) => song.file_path === payload.file_path
+      );
+      const effectiveIndex =
+        queueIndexByFile >= 0 ? queueIndexByFile : queueState.currentIndex;
+      
+      if (effectiveIndex === null || effectiveIndex < 0) return;
+      
+      if (queueIndexByFile >= 0 && queueIndexByFile !== queueState.currentIndex) {
+        queueState.setCurrentIndex(queueIndexByFile);
+      }
       
       if (playerState.repeat === "one") {
         queueState.playSong(currentSong).catch((err) => {
@@ -51,8 +61,8 @@ function App() {
         return;
       }
       
-      if (queueState.currentIndex < queueState.queue.length - 1) {
-        queueState.playSongAtIndex(queueState.currentIndex + 1).catch((err) => {
+      if (effectiveIndex < queueState.queue.length - 1) {
+        queueState.playSongAtIndex(effectiveIndex + 1).catch((err) => {
           console.error("Failed to play next song:", err);
         });
         return;
