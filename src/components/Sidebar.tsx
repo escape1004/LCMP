@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { LayoutDashboard, Plus, Settings } from "lucide-react";
+import { LayoutDashboard, Plus } from "lucide-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { useFolderStore } from "../stores/folderStore";
 import { usePlaylistStore } from "../stores/playlistStore";
@@ -7,6 +7,9 @@ import { useQueueStore } from "../stores/queueStore";
 import { FolderModal } from "./FolderModal";
 import { PlaylistModal } from "./PlaylistModal";
 import { Tooltip } from "./ui/tooltip";
+import { SidebarContextMenu } from "./SidebarContextMenu";
+import { Button } from "./ui/button";
+import { X } from "lucide-react";
 
 export const Sidebar = () => {
   const {
@@ -37,6 +40,17 @@ export const Sidebar = () => {
   const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState(false);
   const [editingFolder, setEditingFolder] = useState<number | null>(null);
   const [editingPlaylist, setEditingPlaylist] = useState<number | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    type: "folder" | "playlist";
+    id: number;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    type: "folder" | "playlist";
+    id: number;
+  } | null>(null);
+  const [deleteChecked, setDeleteChecked] = useState(false);
 
   useEffect(() => {
     loadFolders();
@@ -82,18 +96,19 @@ export const Sidebar = () => {
     }
   };
 
-  const handleEditFolder = (e: React.MouseEvent, folderId: number) => {
-    e.stopPropagation();
+  const handleContextMenu = (
+    e: React.MouseEvent,
+    type: "folder" | "playlist",
+    id: number
+  ) => {
     e.preventDefault();
-    setEditingFolder(folderId);
-    setIsFolderModalOpen(true);
-  };
-
-  const handleEditPlaylist = (e: React.MouseEvent, playlistId: number) => {
     e.stopPropagation();
-    e.preventDefault();
-    setEditingPlaylist(playlistId);
-    setIsPlaylistModalOpen(true);
+    setContextMenu({
+      type,
+      id,
+      x: e.clientX,
+      y: e.clientY,
+    });
   };
 
   const handleFolderDragEnd = (result: DropResult) => {
@@ -212,6 +227,7 @@ export const Sidebar = () => {
                           selectPlaylist(null);
                           setQueueOpen(false);
                         }}
+                        onContextMenu={(e) => handleContextMenu(e, "folder", folder.id)}
                         className={`flex items-center justify-between px-3 py-2 rounded cursor-grab active:cursor-grabbing transition-colors group ${
                           selectedFolderId === folder.id
                             ? "bg-accent text-white"
@@ -221,17 +237,6 @@ export const Sidebar = () => {
                         <span className="flex-1 text-sm font-medium truncate">
                           {folder.name || folder.path}
                         </span>
-                        <button
-                          onClick={(e) => handleEditFolder(e, folder.id)}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          className={`ml-2 p-1 rounded transition-all cursor-pointer ${
-                            selectedFolderId === folder.id
-                              ? "opacity-100"
-                              : "opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
-                          }`}
-                        >
-                          <Settings size={14} />
-                        </button>
                       </div>
                     )}
                   </Draggable>
@@ -287,6 +292,7 @@ export const Sidebar = () => {
                           selectFolder(null);
                           setQueueOpen(false);
                         }}
+                        onContextMenu={(e) => handleContextMenu(e, "playlist", playlist.id)}
                         className={`flex items-center justify-between px-3 py-2 rounded cursor-grab active:cursor-grabbing transition-colors group ${
                           selectedPlaylistId === playlist.id
                             ? "bg-accent text-white"
@@ -296,17 +302,6 @@ export const Sidebar = () => {
                         <span className="flex-1 text-sm font-medium truncate">
                           {playlist.name}
                         </span>
-                        <button
-                          onClick={(e) => handleEditPlaylist(e, playlist.id)}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          className={`ml-2 p-1 rounded transition-all cursor-pointer ${
-                            selectedPlaylistId === playlist.id
-                              ? "opacity-100"
-                              : "opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
-                          }`}
-                        >
-                          <Settings size={14} />
-                        </button>
                       </div>
                     )}
                   </Draggable>
@@ -328,14 +323,6 @@ export const Sidebar = () => {
           setEditingFolder(null);
         }}
         onConfirm={handleFolderConfirm}
-        onDelete={
-          editingFolder
-            ? async () => {
-                await removeFolder(editingFolder);
-                setEditingFolder(null);
-              }
-            : undefined
-        }
         folder={editingFolder ? folders.find((f) => f.id === editingFolder) : null}
       />
       <PlaylistModal
@@ -345,17 +332,104 @@ export const Sidebar = () => {
           setEditingPlaylist(null);
         }}
         onConfirm={handlePlaylistConfirm}
-        onDelete={
-          editingPlaylist
-            ? async () => {
-                await removePlaylist(editingPlaylist);
-                setEditingPlaylist(null);
-              }
-            : undefined
-        }
         playlist={editingPlaylist ? playlists.find((p) => p.id === editingPlaylist) : null}
       />
+      
+      {contextMenu && (
+        <SidebarContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          itemType={contextMenu.type}
+          onClose={() => setContextMenu(null)}
+          onEdit={() => {
+            if (contextMenu.type === "folder") {
+              setEditingFolder(contextMenu.id);
+              setIsFolderModalOpen(true);
+            } else {
+              setEditingPlaylist(contextMenu.id);
+              setIsPlaylistModalOpen(true);
+            }
+          }}
+          onDelete={() => {
+            setDeleteTarget({ type: contextMenu.type, id: contextMenu.id });
+          }}
+        />
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-bg-primary rounded-lg w-full max-w-md max-h-[90vh] overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <h2 className="text-lg font-bold text-text-primary">
+                {deleteTarget.type === "folder" ? "폴더 삭제" : "플레이리스트 삭제"}
+              </h2>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="text-text-muted hover:text-text-primary transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="px-5 py-5">
+              <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger leading-relaxed">
+                삭제 후에는 복구할 수 없습니다. 중요한 데이터가 포함되어 있다면 먼저 백업하세요.
+              </div>
+              <label className="flex items-center gap-3 mt-4 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={deleteChecked}
+                  onChange={(e) => setDeleteChecked(e.target.checked)}
+                  className="h-4 w-4 accent-danger"
+                />
+                <span className="text-sm text-text-primary leading-relaxed">
+                  내용 이해하였고 삭제 진행합니다
+                </span>
+              </label>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-end justify-end gap-3 p-4 border-t border-border">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setDeleteTarget(null);
+                  setDeleteChecked(false);
+                }}
+                className="text-text-primary hover:bg-hover"
+              >
+                취소
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={async () => {
+                  if (!deleteTarget) return;
+                  try {
+                    if (deleteTarget.type === "folder") {
+                      await removeFolder(deleteTarget.id);
+                    } else {
+                      await removePlaylist(deleteTarget.id);
+                    }
+                  } catch (error) {
+                    console.error("Failed to delete item:", error);
+                  } finally {
+                    setDeleteTarget(null);
+                    setDeleteChecked(false);
+                  }
+                }}
+                className="bg-danger hover:bg-danger/90 text-white"
+                disabled={!deleteChecked}
+              >
+                삭제
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
-

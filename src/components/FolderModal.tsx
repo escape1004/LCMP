@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { open } from "@tauri-apps/api/dialog";
 import { Button } from "./ui/button";
@@ -10,18 +10,14 @@ interface FolderModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: (path: string, name: string) => Promise<void>;
-  onDelete?: () => Promise<void>;
   folder?: Folder | null;
 }
 
-export const FolderModal = ({ isOpen, onClose, onConfirm, onDelete, folder }: FolderModalProps) => {
+export const FolderModal = ({ isOpen, onClose, onConfirm, folder }: FolderModalProps) => {
   const [path, setPath] = useState("");
   const [name, setName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleteChecked, setDeleteChecked] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -35,8 +31,6 @@ export const FolderModal = ({ isOpen, onClose, onConfirm, onDelete, folder }: Fo
         setName("");
       }
       setError("");
-      setShowDeleteConfirm(false);
-      setDeleteChecked(false);
     }
   }, [isOpen, folder]);
 
@@ -159,91 +153,6 @@ export const FolderModal = ({ isOpen, onClose, onConfirm, onDelete, folder }: Fo
 
         {/* Footer */}
         <div className="flex items-end justify-end gap-3 p-4 border-t border-border">
-          {folder && onDelete && (
-            <>
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(true)}
-                className="text-danger text-xs px-2 py-1 mr-auto hover:underline hover:text-danger/80"
-                disabled={isLoading}
-              >
-                폴더 삭제
-              </button>
-              {showDeleteConfirm && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60">
-                  <div className="bg-bg-primary rounded-lg p-6 w-full max-w-md border border-border flex flex-col items-center">
-                    <div className="mb-6 text-center text-text-primary">
-                      <div className="text-base font-medium mb-2">
-                        정말로 이 폴더를 삭제하시겠습니까?
-                      </div>
-                      <div className="text-danger font-semibold mb-2">
-                        이 작업은 되돌릴 수 없습니다.
-                      </div>
-                    </div>
-                    
-                    {isDeleting && (
-                      <div className="mb-4 p-4 bg-bg-sidebar rounded-lg border border-border">
-                        <div className="flex items-center justify-center gap-3">
-                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-accent"></div>
-                          <div className="text-text-primary text-sm">
-                            폴더 삭제 중...
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    
-                    <label className="flex items-center space-x-2 w-full mb-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={deleteChecked}
-                        onChange={(e) => setDeleteChecked(e.target.checked)}
-                        disabled={isDeleting}
-                      />
-                      <span className="text-sm text-text-primary">
-                        폴더를 삭제하겠습니다
-                      </span>
-                    </label>
-                    <div className="flex w-full gap-2">
-                      <Button
-                        variant="ghost"
-                        className="flex-1 text-text-primary hover:bg-hover"
-                        onClick={() => {
-                          setShowDeleteConfirm(false);
-                          setDeleteChecked(false);
-                        }}
-                        disabled={isDeleting}
-                      >
-                        취소
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        className="flex-1 bg-danger hover:bg-danger/90 text-white disabled:bg-danger/50 disabled:text-white/50"
-                        disabled={!deleteChecked || isDeleting}
-                        onClick={async () => {
-                          try {
-                            setIsDeleting(true);
-                            if (onDelete) {
-                              await onDelete();
-                            }
-                            setShowDeleteConfirm(false);
-                            setDeleteChecked(false);
-                            onClose();
-                          } catch (error) {
-                            console.error("Failed to delete folder:", error);
-                            setError("폴더 삭제에 실패했습니다.");
-                          } finally {
-                            setIsDeleting(false);
-                          }
-                        }}
-                      >
-                        {isDeleting ? "삭제 중..." : "삭제"}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
           <Button
             type="button"
             variant="ghost"
