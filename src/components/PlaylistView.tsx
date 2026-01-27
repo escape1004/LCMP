@@ -73,10 +73,15 @@ export const PlaylistView = () => {
   const [resizeStartX, setResizeStartX] = useState(0);
   const [resizeStartWidth, setResizeStartWidth] = useState(0);
   const [tableContainerRef, setTableContainerRef] = useState<HTMLDivElement | null>(null);
+  const [tableBodyRef, setTableBodyRef] = useState<HTMLDivElement | null>(null);
   const [needsHorizontalScroll, setNeedsHorizontalScroll] = useState(false);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
   
   // 임시 컬럼 너비 상태 (드래그 중에만 사용)
   const [tempColumnWidths, setTempColumnWidths] = useState<Record<ColumnKey, number>>(columnWidths);
+  const ROW_HEIGHT = 56;
+  const OVERSCAN = 6;
   
   // 검색 기능
   const [searchQuery, setSearchQuery] = useState('');
@@ -131,6 +136,22 @@ export const PlaylistView = () => {
       resizeObserver.disconnect();
     };
   }, [tableContainerRef, visibleColumns, tempColumnWidths]);
+
+  useEffect(() => {
+    if (!tableBodyRef) return;
+
+    const updateViewport = () => {
+      setViewportHeight(tableBodyRef.clientHeight);
+    };
+
+    updateViewport();
+    const resizeObserver = new ResizeObserver(updateViewport);
+    resizeObserver.observe(tableBodyRef);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [tableBodyRef]);
 
   // 컬럼 너비가 변경되면 임시 상태도 업데이트
   useEffect(() => {
@@ -525,6 +546,16 @@ export const PlaylistView = () => {
     await playSongAtIndex(0);
   };
 
+  const totalRows = sortedSongs.length;
+  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const endIndex = Math.min(
+    totalRows,
+    Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN
+  );
+  const visibleSongs = sortedSongs.slice(startIndex, endIndex);
+  const topSpacer = startIndex * ROW_HEIGHT;
+  const bottomSpacer = Math.max(0, (totalRows - endIndex) * ROW_HEIGHT);
+
   return (
     <div className="flex-1 flex flex-col bg-bg-primary min-h-0">
       {/* Header */}
@@ -620,7 +651,13 @@ export const PlaylistView = () => {
             className="flex-1 flex flex-col overflow-hidden bg-bg-primary" 
             ref={setTableContainerRef}
           >
-            <div className={`flex-1 overflow-y-auto min-h-0 ${needsHorizontalScroll ? 'overflow-x-auto' : 'overflow-x-hidden'}`}>
+            <div
+              ref={setTableBodyRef}
+              className={`flex-1 overflow-y-auto min-h-0 ${needsHorizontalScroll ? 'overflow-x-auto' : 'overflow-x-hidden'}`}
+              onScroll={(e) => {
+                setScrollTop(e.currentTarget.scrollTop);
+              }}
+            >
               <table style={{ 
                 tableLayout: 'fixed', 
                 width: (visibleColumns && visibleColumns.length > 0 && tempColumnWidths) 
@@ -711,7 +748,15 @@ export const PlaylistView = () => {
               </tr>
             </thead>
             <tbody className="bg-bg-primary">
-              {sortedSongs.map((song) => {
+              {topSpacer > 0 && (
+                <tr>
+                  <td
+                    style={{ height: `${topSpacer}px`, padding: 0 }}
+                    colSpan={visibleColumns.length + 1}
+                  />
+                </tr>
+              )}
+              {visibleSongs.map((song) => {
                 const hasWaveform = song.waveform_data !== null && song.waveform_data !== '';
                 const isGenerating = generatingWaveformSongId === song.id;
                 // songsVersion과 waveform_data를 key에 포함하여 변경 시 리렌더링 보장
@@ -795,7 +840,8 @@ export const PlaylistView = () => {
                         : 'opacity-50 bg-bg-secondary'
                     }`}
                     style={{
-                      position: 'relative'
+                      position: 'relative',
+                      height: `${ROW_HEIGHT}px`
                     }}
                     onDoubleClick={() => handleSongDoubleClick(song)}
                   >
@@ -844,6 +890,14 @@ export const PlaylistView = () => {
                   </tr>
                 );
               })}
+              {bottomSpacer > 0 && (
+                <tr>
+                  <td
+                    style={{ height: `${bottomSpacer}px`, padding: 0 }}
+                    colSpan={visibleColumns.length + 1}
+                  />
+                </tr>
+              )}
             </tbody>
           </table>
               </div>
