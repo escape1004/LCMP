@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { Sidebar } from "./components/Sidebar";
 import { PlaylistView } from "./components/PlaylistView";
@@ -7,6 +7,7 @@ import { QueueView } from "./components/QueueView";
 import { WaveformWidget } from "./components/WaveformWidget";
 import { ToastContainer } from "./components/ui/toast";
 import { TitleBar } from "./components/TitleBar";
+import { SettingsModal } from "./components/SettingsModal";
 import { useQueueStore } from "./stores/queueStore";
 import { usePlayerStore } from "./stores/playerStore";
 
@@ -17,6 +18,7 @@ type PlaybackFinishedPayload = {
 function App() {
   const { isOpen } = useQueueStore();
   const { loadSavedVolume } = usePlayerStore();
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // 앱 시작 시 저장된 볼륨 불러오기
   useEffect(() => {
@@ -91,7 +93,7 @@ function App() {
 
   return (
     <div className="w-screen h-screen bg-bg-primary text-text-primary font-noto flex flex-col overflow-hidden">
-      <TitleBar />
+      <TitleBar onOpenSettings={() => setSettingsOpen(true)} />
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <Sidebar />
@@ -117,6 +119,7 @@ function App() {
 
       {/* Toast Container */}
       <ToastContainer />
+      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }
