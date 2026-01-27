@@ -35,6 +35,9 @@
         "exists": true,
         "scope": ["**"]
       },
+      "window": {
+        "all": true
+      },
       "path": {
         "all": true
       }
@@ -58,6 +61,7 @@
       {
         "fullscreen": false,
         "resizable": true,
+        "decorations": false,
         "title": "LCMP",
         "width": 1200,
         "height": 800,
@@ -67,4 +71,3 @@
     ]
   }
 }
-

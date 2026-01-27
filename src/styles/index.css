@@ -241,4 +241,12 @@
   .toast-item-exit {
     animation: toastSlideOut 0.3s ease-out;
   }
+
+  .titlebar-drag {
+    -webkit-app-region: drag;
+  }
+
+  .titlebar-no-drag {
+    -webkit-app-region: no-drag;
+  }
 }

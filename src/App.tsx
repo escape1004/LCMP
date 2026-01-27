@@ -6,6 +6,7 @@ import { PlayerControls } from "./components/PlayerControls";
 import { QueueView } from "./components/QueueView";
 import { WaveformWidget } from "./components/WaveformWidget";
 import { ToastContainer } from "./components/ui/toast";
+import { TitleBar } from "./components/TitleBar";
 import { useQueueStore } from "./stores/queueStore";
 import { usePlayerStore } from "./stores/playerStore";
 
@@ -90,6 +91,7 @@ function App() {
 
   return (
     <div className="w-screen h-screen bg-bg-primary text-text-primary font-noto flex flex-col overflow-hidden">
+      <TitleBar />
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <Sidebar />
