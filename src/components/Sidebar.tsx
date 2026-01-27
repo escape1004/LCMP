@@ -11,6 +11,7 @@ import { SidebarContextMenu } from "./SidebarContextMenu";
 import { Button } from "./ui/button";
 import { X } from "lucide-react";
 import { useModalBodyClass } from "../hooks/useModalBodyClass";
+import { useEscapeToClose } from "../hooks/useEscapeToClose";
 
 export const Sidebar = () => {
   const {
@@ -53,6 +54,10 @@ export const Sidebar = () => {
   } | null>(null);
   const [deleteChecked, setDeleteChecked] = useState(false);
   useModalBodyClass(!!deleteTarget);
+  useEscapeToClose(!!deleteTarget, () => {
+    setDeleteTarget(null);
+    setDeleteChecked(false);
+  });
 
   useEffect(() => {
     loadFolders();

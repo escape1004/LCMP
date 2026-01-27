@@ -5,6 +5,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Playlist } from "../types";
 import { useModalBodyClass } from "../hooks/useModalBodyClass";
+import { useEscapeToClose } from "../hooks/useEscapeToClose";
 
 interface PlaylistModalProps {
   isOpen: boolean;
@@ -25,6 +26,7 @@ export const PlaylistModal = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   useModalBodyClass(isOpen);
+  useEscapeToClose(isOpen, onClose);
 
   useEffect(() => {
     if (isOpen) {

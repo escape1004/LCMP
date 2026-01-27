@@ -5,6 +5,7 @@ import { Button } from './ui/button';
 import { AVAILABLE_COLUMNS, useTableColumnsStore, ColumnKey } from '../stores/tableColumnsStore';
 import { useToastStore } from '../stores/toastStore';
 import { useModalBodyClass } from '../hooks/useModalBodyClass';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface ColumnSelectorDialogProps {
   open: boolean;
@@ -16,6 +17,7 @@ export const ColumnSelectorDialog = ({ open, onOpenChange }: ColumnSelectorDialo
   const { showToast } = useToastStore();
   const [tempColumns, setTempColumns] = useState<ColumnKey[]>(visibleColumns);
   useModalBodyClass(open);
+  useEscapeToClose(open, () => onOpenChange(false));
 
   useEffect(() => {
     if (open) {

@@ -8,6 +8,7 @@ import { Label } from "./ui/label";
 import { Song } from "../types";
 import { AlbumArtImage } from "./AlbumArtImage";
 import { useModalBodyClass } from "../hooks/useModalBodyClass";
+import { useEscapeToClose } from "../hooks/useEscapeToClose";
 
 interface MetadataModalProps {
   isOpen: boolean;
@@ -39,6 +40,7 @@ interface MetadataModalProps {
 
 export const MetadataModal = ({ isOpen, song, onClose, onSave }: MetadataModalProps) => {
   useModalBodyClass(isOpen);
+  useEscapeToClose(isOpen, onClose);
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
   const [album, setAlbum] = useState("");

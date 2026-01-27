@@ -6,6 +6,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Folder } from "../types";
 import { useModalBodyClass } from "../hooks/useModalBodyClass";
+import { useEscapeToClose } from "../hooks/useEscapeToClose";
 
 interface FolderModalProps {
   isOpen: boolean;
@@ -20,6 +21,7 @@ export const FolderModal = ({ isOpen, onClose, onConfirm, folder }: FolderModalP
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   useModalBodyClass(isOpen);
+  useEscapeToClose(isOpen, onClose);
 
   useEffect(() => {
     if (isOpen) {

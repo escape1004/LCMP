@@ -1,6 +1,7 @@
 ﻿import { createRef, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
+import { useEscapeToClose } from "../hooks/useEscapeToClose";
 
 type SettingsGroupId = "basic" | "player" | "songs" | "interface";
 type SettingsSectionId =
@@ -41,6 +42,7 @@ interface SettingsModalProps {
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [activeGroup, setActiveGroup] = useState<SettingsGroupId>("basic");
+  useEscapeToClose(isOpen, onClose);
   const sectionRefs = useMemo(() => {
     return {
       basic: createRef<HTMLDivElement>(),
