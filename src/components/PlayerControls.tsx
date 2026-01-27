@@ -7,7 +7,7 @@ import { invoke } from "@tauri-apps/api/tauri";
 import { AlbumArtImage } from "./AlbumArtImage";
 
 export const PlayerControls = () => {
-  const { isOpen, toggleQueue, queue, currentIndex, playNext, playPrevious } = useQueueStore();
+  const { isOpen, toggleQueue, queue, currentIndex, playNext, playPrevious, playSongAtIndex } = useQueueStore();
   const { 
     isPlaying, 
     currentSong, 
@@ -266,6 +266,10 @@ export const PlayerControls = () => {
               className="p-2 hover:bg-hover rounded transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
               onClick={async (e) => {
                 e.stopPropagation();
+                if (!currentSong && currentIndex !== null) {
+                  await playSongAtIndex(currentIndex);
+                  return;
+                }
                 await togglePlayPause();
               }}
               disabled={!displaySong}

@@ -3,6 +3,39 @@ import { Song } from '../types';
 import { usePlayerStore } from './playerStore';
 import { invoke } from '@tauri-apps/api/tauri';
 
+const QUEUE_STORAGE_KEY = 'lcmp.queueState';
+
+const loadQueueState = (): { queue: Song[]; currentIndex: number | null } | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(QUEUE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { queue?: Song[]; currentIndex?: number | null };
+    if (!parsed || !Array.isArray(parsed.queue)) return null;
+    const index =
+      typeof parsed.currentIndex === 'number' && parsed.currentIndex >= 0
+        ? parsed.currentIndex
+        : null;
+    const safeIndex = index !== null && index < parsed.queue.length ? index : null;
+    return { queue: parsed.queue, currentIndex: safeIndex };
+  } catch (error) {
+    console.error('Failed to load queue state:', error);
+    return null;
+  }
+};
+
+const saveQueueState = (queue: Song[], currentIndex: number | null) => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(
+      QUEUE_STORAGE_KEY,
+      JSON.stringify({ queue, currentIndex })
+    );
+  } catch (error) {
+    console.error('Failed to save queue state:', error);
+  }
+};
+
 interface QueueStore {
   queue: Song[];
   currentIndex: number | null;
@@ -25,9 +58,11 @@ interface QueueStore {
   preloadWaveforms: (queue: Song[]) => Promise<void>; // 백그라운드 웨이폼 추출
 }
 
+const savedState = loadQueueState();
+
 export const useQueueStore = create<QueueStore>((set, get) => ({
-  queue: [],
-  currentIndex: null,
+  queue: savedState?.queue ?? [],
+  currentIndex: savedState?.currentIndex ?? null,
   isOpen: false,
   originalQueue: [],
 
@@ -252,3 +287,14 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
   },
 }));
 
+if (typeof window !== 'undefined') {
+  let lastQueue = useQueueStore.getState().queue;
+  let lastIndex = useQueueStore.getState().currentIndex;
+  useQueueStore.subscribe((state) => {
+    if (state.queue !== lastQueue || state.currentIndex !== lastIndex) {
+      lastQueue = state.queue;
+      lastIndex = state.currentIndex;
+      saveQueueState(state.queue, state.currentIndex);
+    }
+  });
+}
