@@ -4,11 +4,12 @@
 
 @layer base {
   body {
-    @apply bg-bg-primary text-text-primary font-noto;
+    @apply text-text-primary font-noto;
     margin: 0;
     padding: 0;
     overflow: hidden;
     cursor: default;
+    background: transparent;
   }
 
   html {

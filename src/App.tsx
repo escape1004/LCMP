@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
+import { appWindow } from "@tauri-apps/api/window";
 import { Sidebar } from "./components/Sidebar";
 import { PlaylistView } from "./components/PlaylistView";
 import { PlayerControls } from "./components/PlayerControls";
@@ -19,11 +20,42 @@ function App() {
   const { isOpen } = useQueueStore();
   const { loadSavedVolume } = usePlayerStore();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
 
   // 앱 시작 시 저장된 볼륨 불러오기
   useEffect(() => {
     loadSavedVolume();
   }, [loadSavedVolume]);
+
+  useEffect(() => {
+    let unlistenResize: UnlistenFn | null = null;
+    const syncMaximized = async () => {
+      try {
+        const maximized = await appWindow.isMaximized();
+        setIsMaximized(maximized);
+      } catch (error) {
+        console.error("Failed to read window state:", error);
+      }
+    };
+
+    syncMaximized();
+    appWindow
+      .onResized(() => {
+        syncMaximized();
+      })
+      .then((unlisten) => {
+        unlistenResize = unlisten;
+      })
+      .catch((error) => {
+        console.error("Failed to listen window resize:", error);
+      });
+
+    return () => {
+      if (unlistenResize) {
+        unlistenResize();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     let unlisten: UnlistenFn | null = null;
@@ -92,7 +124,11 @@ function App() {
   }, []);
 
   return (
-    <div className="w-screen h-screen bg-bg-primary text-text-primary font-noto flex flex-col overflow-hidden">
+    <div
+      className={`w-screen h-screen bg-bg-primary text-text-primary font-noto flex flex-col overflow-hidden ${
+        isMaximized ? "" : "rounded-lg"
+      }`}
+    >
       <TitleBar onOpenSettings={() => setSettingsOpen(true)} />
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}

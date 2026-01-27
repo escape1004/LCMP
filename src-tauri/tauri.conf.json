@@ -62,6 +62,7 @@
         "fullscreen": false,
         "resizable": true,
         "decorations": false,
+        "transparent": true,
         "title": "LCMP",
         "width": 1200,
         "height": 800,
