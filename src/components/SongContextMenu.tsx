@@ -84,7 +84,7 @@ export const SongContextMenu = ({
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 bg-bg-sidebar border border-border rounded-md shadow-lg py-1 w-fit"
+      className="fixed z-50 bg-bg-sidebar border border-border rounded-md shadow-lg w-fit"
       style={{
         left: `${x}px`,
         top: `${y}px`,
@@ -130,7 +130,7 @@ export const SongContextMenu = ({
       >
         태그 추가
       </button>
-      <div className="h-px bg-border my-1" />
+      <div className="h-px bg-border my-0" />
       <button
         onClick={() => {
           onEditMetadata(song);

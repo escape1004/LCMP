@@ -71,7 +71,7 @@ export const SidebarContextMenu = ({
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 bg-bg-sidebar border border-border rounded-md shadow-lg py-1 w-fit"
+      className="fixed z-50 bg-bg-sidebar border border-border rounded-md shadow-lg w-fit"
       style={{
         left: `${x}px`,
         top: `${y}px`,
