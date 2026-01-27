@@ -889,9 +889,18 @@ pub async fn update_song_metadata(payload: UpdateSongMetadataPayload) -> Result<
         .extension()
         .and_then(|ext| ext.to_str())
         .map(|s| s.to_lowercase());
+
+    let ext = extension.as_deref().unwrap_or("");
+    let supports_file_metadata = matches!(ext, "mp3" | "flac");
+    if !supports_file_metadata {
+        return Err(format!(
+            "지원하지 않는 파일 확장자입니다. 파일 메타데이터 저장은 mp3/flac만 지원합니다. (현재: {})",
+            if ext.is_empty() { "알 수 없음" } else { ext }
+        ));
+    }
     
-    match extension.as_deref() {
-        Some("mp3") => {
+    match ext {
+        "mp3" => {
             update_mp3_metadata(
                 &file_path,
                 &title,
@@ -916,7 +925,7 @@ pub async fn update_song_metadata(payload: UpdateSongMetadataPayload) -> Result<
                 &grouping,
             )?;
         }
-        Some("flac") => {
+        "flac" => {
             update_flac_metadata(
                 &file_path,
                 &title,
