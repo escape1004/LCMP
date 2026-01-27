@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import React from 'react';
 import { useFolderStore } from '../stores/folderStore';
 import { usePlaylistStore } from '../stores/playlistStore';
@@ -36,7 +36,7 @@ const formatFileSize = (bytes: number): string => {
 export const PlaylistView = () => {
   const { folders, selectedFolderId } = useFolderStore();
   const { playlists, selectedPlaylistId } = usePlaylistStore();
-  // songs와 songsVersion을 함께 구독하여 변경사항을 확실히 감지
+  // songs? songsVersion???④퍡 援щ룆?섏뿬 蹂寃쎌궗??쓣 ?뺤떎??媛먯?
   const storeSongs = useSongStore((state) => state.songs);
   const songsVersion = useSongStore((state) => state.songsVersion);
   const isLoading = useSongStore((state) => state.isLoading);
@@ -48,15 +48,15 @@ export const PlaylistView = () => {
   const updateSong = useSongStore((state) => state.updateSong);
   const refreshCurrentList = useSongStore((state) => state.refreshCurrentList);
   
-  // songsVersion이 변경되면 강제로 리렌더링
+  // songsVersion??蹂寃쎈릺硫?媛뺤젣濡?由щ젋?붾쭅
   const [songs, setSongs] = useState<Song[]>(storeSongs);
   
   useEffect(() => {
-    // songsVersion이 변경되면 무조건 업데이트 (강제 리렌더링)
+    // songsVersion??蹂寃쎈릺硫?臾댁“嫄??낅뜲?댄듃 (媛뺤젣 由щ젋?붾쭅)
     setSongs([...storeSongs]);
   }, [songsVersion]);
   
-  // storeSongs 참조가 변경될 때도 업데이트
+  // storeSongs 李몄“媛 蹂寃쎈맆 ?뚮룄 ?낅뜲?댄듃
   useEffect(() => {
     setSongs([...storeSongs]);
   }, [storeSongs]);
@@ -66,7 +66,7 @@ export const PlaylistView = () => {
   const [totalSize, setTotalSize] = useState<number>(0);
   const [isLoadingSize, setIsLoadingSize] = useState(false);
   
-  // 컬럼 설정
+  // 而щ읆 ?ㅼ젙
   const { visibleColumns, columnWidths, sortColumn, sortOrder, loadColumns, loadColumnWidths, setColumnWidth, toggleSort } = useTableColumnsStore();
   const [isColumnDialogOpen, setIsColumnDialogOpen] = useState(false);
   const [resizingColumn, setResizingColumn] = useState<ColumnKey | null>(null);
@@ -78,16 +78,16 @@ export const PlaylistView = () => {
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   
-  // 임시 컬럼 너비 상태 (드래그 중에만 사용)
+  // ?꾩떆 而щ읆 ?덈퉬 ?곹깭 (?쒕옒洹?以묒뿉留??ъ슜)
   const [tempColumnWidths, setTempColumnWidths] = useState<Record<ColumnKey, number>>(columnWidths);
   const ROW_HEIGHT = 56;
   const OVERSCAN = 6;
   
-  // 검색 기능
+  // 寃??湲곕뒫
   const [searchQuery, setSearchQuery] = useState('');
   const [searchField, setSearchField] = useState<ColumnKey | 'all'>('all');
   
-  // 컨텍스트 메뉴
+  // 而⑦뀓?ㅽ듃 硫붾돱
   const [contextMenu, setContextMenu] = useState<{
     song: Song;
     x: number;
@@ -96,17 +96,17 @@ export const PlaylistView = () => {
   const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false);
   const [selectedSongForMetadata, setSelectedSongForMetadata] = useState<Song | null>(null);
   
-  // 플레이리스트 선택 모달
+  // ?뚮젅?대━?ㅽ듃 ?좏깮 紐⑤떖
   const [isPlaylistSelectModalOpen, setIsPlaylistSelectModalOpen] = useState(false);
   const [selectedSongForPlaylist, setSelectedSongForPlaylist] = useState<Song | null>(null);
   
-  // 컬럼 설정 로드 (앱 시작 시 한 번만)
+  // 而щ읆 ?ㅼ젙 濡쒕뱶 (???쒖옉 ????踰덈쭔)
   useEffect(() => {
     loadColumns();
     loadColumnWidths();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 빈 공간 너비 계산 및 업데이트
+  // 鍮?怨듦컙 ?덈퉬 怨꾩궛 諛??낅뜲?댄듃
   useEffect(() => {
     if (!tableContainerRef) return;
     if (!visibleColumns || visibleColumns.length === 0) return;
@@ -115,10 +115,10 @@ export const PlaylistView = () => {
       if (!tempColumnWidths) return;
       const tableWidth = visibleColumns.reduce((sum, key) => sum + (tempColumnWidths[key] || 150), 0);
       const containerWidth = tableContainerRef.offsetWidth;
-      if (containerWidth === 0) return; // 컨테이너가 아직 렌더링되지 않음
+      if (containerWidth === 0) return; // 而⑦뀒?대꼫媛 ?꾩쭅 ?뚮뜑留곷릺吏 ?딆쓬
       
       if (tableWidth < containerWidth) {
-        // 테이블이 컨테이너보다 작으면 빈 공간을 컨테이너 너비만큼만 채움
+        // ?뚯씠釉붿씠 而⑦뀒?대꼫蹂대떎 ?묒쑝硫?鍮?怨듦컙??而⑦뀒?대꼫 ?덈퉬留뚰겮留?梨꾩?
         tableContainerRef.style.setProperty('--empty-space-width', `${containerWidth - tableWidth}px`);
         setNeedsHorizontalScroll(false);
       } else {
@@ -153,14 +153,14 @@ export const PlaylistView = () => {
     };
   }, [tableBodyRef]);
 
-  // 컬럼 너비가 변경되면 임시 상태도 업데이트
+  // 而щ읆 ?덈퉬媛 蹂寃쎈릺硫??꾩떆 ?곹깭???낅뜲?댄듃
   useEffect(() => {
     setTempColumnWidths(columnWidths);
   }, [columnWidths]);
 
   // 컬럼 너비 리사이즈 핸들러
   const handleResizeStart = (e: React.MouseEvent, columnKey: ColumnKey) => {
-    // 앨범아트는 리사이즈 불가
+    // ?⑤쾾?꾪듃??由ъ궗?댁쫰 遺덇?
     if (columnKey === 'album_art') {
       return;
     }
@@ -177,8 +177,8 @@ export const PlaylistView = () => {
 
     const handleMouseMove = (e: MouseEvent) => {
       const diff = e.clientX - resizeStartX;
-      const newWidth = Math.max(80, resizeStartWidth + diff); // 최소 너비 80px
-      // 임시 상태만 업데이트 (드래그 중에는 저장하지 않음)
+      const newWidth = Math.max(80, resizeStartWidth + diff); // 理쒖냼 ?덈퉬 80px
+      // ?꾩떆 ?곹깭留??낅뜲?댄듃 (?쒕옒洹?以묒뿉????ν븯吏 ?딆쓬)
       setTempColumnWidths((prev) => ({ ...prev, [resizingColumn]: newWidth }));
     };
 
@@ -201,13 +201,13 @@ export const PlaylistView = () => {
   }, [resizingColumn, resizeStartX, resizeStartWidth, tempColumnWidths, setColumnWidth]);
 
   const handleSongDoubleClick = async (song: Song) => {
-    // 웨이폼이 없는 노래는 더블클릭 비활성화
+    // ?⑥씠?쇱씠 ?녿뒗 ?몃옒???붾툝?대┃ 鍮꾪솢?깊솕
     if (!song.waveform_data) {
       return;
     }
     
     try {
-      // 대기열에 추가하고 재생
+      // ?湲곗뿴??異붽??섍퀬 ?ъ깮
       await playSong(song);
     } catch (error) {
       console.error('Failed to play song:', error);
@@ -222,25 +222,29 @@ export const PlaylistView = () => {
     } else {
       clearSongs();
     }
-    // 폴더나 플레이리스트 변경 시 검색어와 필터 초기화
+    // 폴더/플레이리스트 변경 시 검색/필터 초기화
     setSearchQuery('');
     setSearchField('all');
+    if (tableBodyRef) {
+      tableBodyRef.scrollTop = 0;
+    }
+    setScrollTop(0);
   }, [selectedFolderId, selectedPlaylistId, loadSongsByFolder, loadSongsByPlaylist, clearSongs]);
 
-  // 웨이폼 생성 상태 주기적으로 확인
+  // ?⑥씠???앹꽦 ?곹깭 二쇨린?곸쑝濡??뺤씤
   useEffect(() => {
     const interval = setInterval(() => {
       checkGeneratingWaveform();
-    }, 500); // 0.5초마다 확인
+    }, 500); // 0.5珥덈쭏???뺤씤
 
-    // 초기 확인
+    // 珥덇린 ?뺤씤
     checkGeneratingWaveform();
 
     return () => clearInterval(interval);
   }, [checkGeneratingWaveform]);
 
 
-  // 검색 및 정렬된 노래 목록
+  // 寃??諛??뺣젹???몃옒 紐⑸줉
   const sortedSongs = useMemo(() => {
     let filtered = [...songs];
 
@@ -295,7 +299,7 @@ export const PlaylistView = () => {
       });
     }
 
-    // 정렬
+    // ?뺣젹
     if (sortColumn && sortOrder) {
       filtered.sort((a, b) => {
         let aValue: any;
@@ -361,7 +365,7 @@ export const PlaylistView = () => {
     return filtered;
   }, [songs, searchQuery, searchField, sortColumn, sortOrder]);
 
-  // 전체 재생 시간 계산
+  // 전체 ?ъ깮 ?쒓컙 怨꾩궛
   const totalDuration = useMemo(() => {
     return songs.reduce((sum, song) => {
       const duration = song.duration ?? 0;
@@ -369,7 +373,7 @@ export const PlaylistView = () => {
     }, 0);
   }, [songs]);
 
-  // 파일 크기 계산
+  // ?뚯씪 ?ш린 怨꾩궛
   useEffect(() => {
     const calculateTotalSize = async () => {
       if (songs.length === 0) {
@@ -442,14 +446,14 @@ export const PlaylistView = () => {
       
       const { showToast } = useToastStore.getState();
       const playlist = playlists.find((p) => p.id === selectedPlaylistId);
-      showToast(`${playlist?.name || '플레이리스트'}에서 삭제되었습니다.`);
+      showToast(`${playlist?.name || '플레이리스트'}에서 삭제했습니다.`);
       
-      // 노래 목록 새로고침
+      // ?몃옒 紐⑸줉 ?덈줈怨좎묠
       loadSongsByPlaylist(selectedPlaylistId);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const { showToast } = useToastStore.getState();
-      showToast(errorMessage || '플레이리스트에서 삭제하는데 실패했습니다.');
+      showToast(errorMessage || '플레이리스트에서 삭제하는 데 실패했습니다.');
     }
   };
   
@@ -464,16 +468,16 @@ export const PlaylistView = () => {
       
       const { showToast } = useToastStore.getState();
       const playlist = playlists.find((p) => p.id === playlistId);
-      showToast(`${playlist?.name || '플레이리스트'}에 추가되었습니다.`);
+      showToast(`${playlist?.name || '플레이리스트'}에 추가했습니다.`);
       
-      // 현재 플레이리스트가 선택된 플레이리스트라면 노래 목록 새로고침
+      // ?꾩옱 ?뚮젅?대━?ㅽ듃媛 ?좏깮???뚮젅?대━?ㅽ듃?쇰㈃ ?몃옒 紐⑸줉 ?덈줈怨좎묠
       if (selectedPlaylistId === playlistId) {
         loadSongsByPlaylist(playlistId);
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const { showToast } = useToastStore.getState();
-      showToast(errorMessage || '플레이리스트에 추가하는데 실패했습니다.');
+      showToast(errorMessage || '플레이리스트에 추가하는 데 실패했습니다.');
       throw error;
     }
   };
@@ -525,24 +529,24 @@ export const PlaylistView = () => {
     }
   };
 
-  // 현재 보이는 노래들(검색 결과 포함)을 대기열에 추가 (웨이폼이 있는 노래만 추가)
+  // ?꾩옱 蹂댁씠???몃옒??寃??寃곌낵 ?ы븿)???湲곗뿴??異붽? (?⑥씠?쇱씠 ?덈뒗 ?몃옒留?異붽?)
   const handleAddAllToQueue = async () => {
     if (sortedSongs.length === 0) {
       showToast('추가할 노래가 없습니다.');
       return;
     }
-    // 웨이폼이 DB에 있는 노래만 필터링
+    // 웨이브폼이 있는 곡만 추가
     const songsWithWaveform = sortedSongs.filter(
       (song) => song.waveform_data !== null && song.waveform_data.trim() !== ''
     );
     if (songsWithWaveform.length === 0) {
-      showToast('웨이폼 데이터가 있는 노래가 없습니다.');
+      showToast('웨이브폼 데이터가 있는 노래가 없습니다.');
       return;
     }
-    // 기존 대기열 초기화 후 새 노래들 추가
+    // 湲곗〈 ?湲곗뿴 珥덇린???????몃옒??異붽?
     clearQueue();
     addMultipleToQueue(songsWithWaveform);
-    // 첫 번째 곡 바로 재생
+    // 泥?踰덉㎏ 怨?諛붾줈 ?ъ깮
     await playSongAtIndex(0);
   };
 
@@ -710,7 +714,7 @@ export const PlaylistView = () => {
                           {sortIcon}
                         </div>
                       </div>
-                      {/* 리사이즈 핸들 (앨범아트 제외) */}
+                      {/* 由ъ궗?댁쫰 ?몃뱾 (?⑤쾾?꾪듃 ?쒖쇅) */}
                       {!isAlbumArt && (
                         <div
                           className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-accent transition-colors group"
@@ -731,7 +735,7 @@ export const PlaylistView = () => {
                     </th>
                   );
                 })}
-                {/* 헤더 빈 공간을 채우는 실제 셀 */}
+                {/* ?ㅻ뜑 鍮?怨듦컙??梨꾩슦???ㅼ젣 ? */}
                 <th 
                   className="bg-bg-primary border-b border-border"
                   style={{
@@ -759,7 +763,7 @@ export const PlaylistView = () => {
               {visibleSongs.map((song) => {
                 const hasWaveform = song.waveform_data !== null && song.waveform_data !== '';
                 const isGenerating = generatingWaveformSongId === song.id;
-                // songsVersion과 waveform_data를 key에 포함하여 변경 시 리렌더링 보장
+                // songsVersion怨?waveform_data瑜?key???ы븿?섏뿬 蹂寃???由щ젋?붾쭅 蹂댁옣
                 const rowKey = `${song.id}-${songsVersion}-${song.waveform_data ? '1' : '0'}`;
                 
                 const renderCell = (columnKey: ColumnKey) => {
@@ -797,7 +801,7 @@ export const PlaylistView = () => {
                           <span className={`truncate ${hasTitle ? 'text-text-primary' : 'text-text-muted'}`}>{song.title || '제목 없음'}</span>
                           {!hasWaveform && isGenerating && (
                             <span className="text-xs text-text-muted italic flex-shrink-0">
-                              (웨이브폼 생성중...)
+                              (웨이브폼 생성 중...)
                             </span>
                           )}
                         </div>
@@ -867,7 +871,7 @@ export const PlaylistView = () => {
                         </td>
                       );
                     })}
-                    {/* 빈 공간을 채우는 실제 셀 - 호버 효과와 클릭 이벤트 지원 */}
+                    {/* 鍮?怨듦컙??梨꾩슦???ㅼ젣 ? - ?몃쾭 ?④낵? ?대┃ ?대깽??吏??*/}
                     <td 
                       className={`transition-colors duration-150 border-b border-border ${
                         hasWaveform
@@ -905,13 +909,13 @@ export const PlaylistView = () => {
         )}
       </div>
       
-      {/* 컬럼 선택 다이얼로그 */}
+      {/* 而щ읆 ?좏깮 ?ㅼ씠?쇰줈洹?*/}
       <ColumnSelectorDialog
         open={isColumnDialogOpen}
         onOpenChange={setIsColumnDialogOpen}
       />
       
-      {/* 컨텍스트 메뉴 */}
+      {/* 而⑦뀓?ㅽ듃 硫붾돱 */}
       {contextMenu && (
         <SongContextMenu
           song={contextMenu.song}
@@ -947,3 +951,4 @@ export const PlaylistView = () => {
     </div>
   );
 };
+
