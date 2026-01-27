@@ -8,6 +8,7 @@
     margin: 0;
     padding: 0;
     overflow: hidden;
+    cursor: default;
   }
 
   html {
@@ -44,6 +45,71 @@
   /* 텍스트 입력 시 커서(캐럿) 색상 (흰색) */
   * {
     caret-color: #ffffff;
+  }
+
+  /* Text elements should use default cursor (not text) */
+  p,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  li,
+  small,
+  strong,
+  em {
+    cursor: default;
+  }
+
+  /* Keep interactive elements using their expected cursors */
+  button,
+  [role="button"],
+  a,
+  summary {
+    cursor: pointer;
+  }
+
+  input,
+  textarea {
+    cursor: text;
+  }
+
+  select {
+    cursor: default;
+  }
+
+  /* Respect Tailwind cursor utility classes */
+  .cursor-pointer {
+    cursor: pointer !important;
+  }
+
+  .cursor-grab {
+    cursor: grab !important;
+  }
+
+  .cursor-grabbing {
+    cursor: grabbing !important;
+  }
+
+  .cursor-col-resize {
+    cursor: col-resize !important;
+  }
+
+  .cursor-row-resize {
+    cursor: row-resize !important;
+  }
+
+  .cursor-ew-resize {
+    cursor: ew-resize !important;
+  }
+
+  .cursor-ns-resize {
+    cursor: ns-resize !important;
+  }
+
+  .cursor-move {
+    cursor: move !important;
   }
 
   /* Global scrollbar style */
@@ -176,4 +242,3 @@
     animation: toastSlideOut 0.3s ease-out;
   }
 }
-

@@ -228,7 +228,7 @@ export const Sidebar = () => {
                           setQueueOpen(false);
                         }}
                         onContextMenu={(e) => handleContextMenu(e, "folder", folder.id)}
-                        className={`flex items-center justify-between px-3 py-2 rounded cursor-grab active:cursor-grabbing transition-colors group ${
+                        className={`flex items-center justify-between px-3 py-2 rounded cursor-pointer transition-colors group ${
                           selectedFolderId === folder.id
                             ? "bg-accent text-white"
                             : "hover:bg-hover text-text-primary"
@@ -293,7 +293,7 @@ export const Sidebar = () => {
                           setQueueOpen(false);
                         }}
                         onContextMenu={(e) => handleContextMenu(e, "playlist", playlist.id)}
-                        className={`flex items-center justify-between px-3 py-2 rounded cursor-grab active:cursor-grabbing transition-colors group ${
+                        className={`flex items-center justify-between px-3 py-2 rounded cursor-pointer transition-colors group ${
                           selectedPlaylistId === playlist.id
                             ? "bg-accent text-white"
                             : "hover:bg-hover text-text-primary"

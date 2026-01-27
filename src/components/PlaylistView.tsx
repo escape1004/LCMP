@@ -583,7 +583,7 @@ export const PlaylistView = () => {
           <select
             value={searchField}
             onChange={(e) => setSearchField(e.target.value as ColumnKey | 'all')}
-            className="h-10 px-3 rounded-md border border-border bg-bg-sidebar text-sm text-text-primary focus:outline-none"
+            className="h-10 px-3 rounded-md border border-border bg-bg-sidebar text-sm text-text-primary focus:outline-none cursor-pointer"
           >
             <option value="all">전체</option>
             {AVAILABLE_COLUMNS.filter(col => 
