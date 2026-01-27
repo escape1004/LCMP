@@ -1,5 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react';
-import React from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFolderStore } from '../stores/folderStore';
 import { usePlaylistStore } from '../stores/playlistStore';
 import { useSongStore } from '../stores/songStore';
@@ -9,7 +8,7 @@ import { useToastStore } from '../stores/toastStore';
 import { Song } from '../types';
 import { invoke } from '@tauri-apps/api/tauri';
 import { ColumnSelectorDialog } from './ColumnSelectorDialog';
-import { ArrowUp, ArrowDown, Play, Search, X, Disc3 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Disc3, Filter, Play, Search, X } from 'lucide-react';
 import { Tooltip } from './ui/tooltip';
 import { Input } from './ui/input';
 import { SongContextMenu } from './SongContextMenu';
@@ -86,6 +85,8 @@ export const PlaylistView = () => {
   // 寃??湲곕뒫
   const [searchQuery, setSearchQuery] = useState('');
   const [searchField, setSearchField] = useState<ColumnKey | 'all'>('all');
+  const [isSearchFilterOpen, setIsSearchFilterOpen] = useState(false);
+  const searchFilterRef = useRef<HTMLDivElement | null>(null);
   
   // 而⑦뀓?ㅽ듃 硫붾돱
   const [contextMenu, setContextMenu] = useState<{
@@ -242,6 +243,26 @@ export const PlaylistView = () => {
 
     return () => clearInterval(interval);
   }, [checkGeneratingWaveform]);
+
+  useEffect(() => {
+    if (!isSearchFilterOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchFilterRef.current && !searchFilterRef.current.contains(event.target as Node)) {
+        setIsSearchFilterOpen(false);
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsSearchFilterOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isSearchFilterOpen]);
 
 
   // 寃??諛??뺣젹???몃옒 紐⑸줉
@@ -615,24 +636,61 @@ export const PlaylistView = () => {
               </button>
             )}
           </div>
-          <select
-            value={searchField}
-            onChange={(e) => setSearchField(e.target.value as ColumnKey | 'all')}
-            className="h-10 px-3 rounded-md border border-border bg-bg-sidebar text-sm text-text-primary focus:outline-none cursor-pointer"
-          >
-            <option value="all">전체</option>
-            {AVAILABLE_COLUMNS.filter(col => 
-              col.key !== 'album_art' && 
-              col.key !== 'duration' && 
-              col.key !== 'file_path' && 
-              col.key !== 'created_at' && 
-              col.key !== 'updated_at'
-            ).map((column) => (
-              <option key={column.key} value={column.key}>
-                {column.label}
-              </option>
-            ))}
-          </select>
+          <div ref={searchFilterRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setIsSearchFilterOpen((prev) => !prev)}
+              className="h-10 px-3 rounded-md border border-border bg-bg-sidebar text-sm text-text-primary focus:outline-none cursor-pointer flex items-center gap-2 min-w-[120px]"
+            >
+              <span className="truncate">
+                {searchField === 'all'
+                  ? '전체'
+                  : AVAILABLE_COLUMNS.find((col) => col.key === searchField)?.label ?? '전체'}
+              </span>
+              <Filter className="w-3.5 h-3.5 ml-auto text-text-muted" />
+            </button>
+            {isSearchFilterOpen && (
+              <div className="absolute right-0 mt-2 w-44 rounded-md border border-border bg-bg-sidebar shadow-lg z-20 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchField('all');
+                    setIsSearchFilterOpen(false);
+                  }}
+                  className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                    searchField === 'all'
+                      ? 'bg-accent text-white'
+                      : 'text-text-primary hover:bg-hover'
+                  }`}
+                >
+                  전체
+                </button>
+                {visibleColumns
+                  .filter((key) => key !== 'album_art')
+                  .map((key) => {
+                    const column = AVAILABLE_COLUMNS.find((col) => col.key === key);
+                    if (!column) return null;
+                    return (
+                      <button
+                        key={column.key}
+                        type="button"
+                        onClick={() => {
+                          setSearchField(column.key);
+                          setIsSearchFilterOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                          searchField === column.key
+                            ? 'bg-accent text-white'
+                            : 'text-text-primary hover:bg-hover'
+                        }`}
+                      >
+                        {column.label}
+                      </button>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

@@ -179,7 +179,7 @@ export const WaveformWidget = () => {
           <Loader2 className="w-5 h-5 text-text-muted animate-spin" />
         ) : waveform.length === 0 ? (
           <span className="text-text-muted text-sm">
-            {currentSong ? "웨이폼 없음" : "노래를 재생해주세요"}
+            {currentSong ? "웨이폼 없음" : "노래를 재생해주세요."}
           </span>
         ) : (
           <>
