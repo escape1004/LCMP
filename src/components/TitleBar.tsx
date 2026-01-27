@@ -28,7 +28,7 @@ export function TitleBar({ onOpenSettings }: TitleBarProps) {
 
   return (
     <div
-      className="relative h-8 bg-[#2B2D31] text-[#949BA4] flex items-center select-none titlebar-drag"
+      className="titlebar-root titlebar-dim relative z-[70] h-8 bg-[#2B2D31] text-[#949BA4] flex items-center select-none titlebar-drag"
       data-tauri-drag-region
       onMouseDown={handleMouseDown}
     >
@@ -51,7 +51,7 @@ export function TitleBar({ onOpenSettings }: TitleBarProps) {
       <div className="flex items-center h-full titlebar-no-drag">
         <button
           type="button"
-          className="w-12 h-full flex items-center justify-center hover:bg-[#404249] hover:text-white transition-colors"
+          className="titlebar-extra w-12 h-full flex items-center justify-center hover:bg-[#404249] hover:text-white transition-colors"
           aria-label="환경설정"
           onClick={onOpenSettings}
         >

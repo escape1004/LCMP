@@ -4,6 +4,7 @@ import { DragDropContext, Droppable, Draggable, DropResult, DragStart } from '@h
 import { Button } from './ui/button';
 import { AVAILABLE_COLUMNS, useTableColumnsStore, ColumnKey } from '../stores/tableColumnsStore';
 import { useToastStore } from '../stores/toastStore';
+import { useModalBodyClass } from '../hooks/useModalBodyClass';
 
 interface ColumnSelectorDialogProps {
   open: boolean;
@@ -14,6 +15,7 @@ export const ColumnSelectorDialog = ({ open, onOpenChange }: ColumnSelectorDialo
   const { visibleColumns, setColumns } = useTableColumnsStore();
   const { showToast } = useToastStore();
   const [tempColumns, setTempColumns] = useState<ColumnKey[]>(visibleColumns);
+  useModalBodyClass(open);
 
   useEffect(() => {
     if (open) {

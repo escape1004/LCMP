@@ -5,6 +5,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Folder } from "../types";
+import { useModalBodyClass } from "../hooks/useModalBodyClass";
 
 interface FolderModalProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ export const FolderModal = ({ isOpen, onClose, onConfirm, folder }: FolderModalP
   const [name, setName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  useModalBodyClass(isOpen);
 
   useEffect(() => {
     if (isOpen) {

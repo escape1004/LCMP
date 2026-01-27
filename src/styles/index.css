@@ -249,4 +249,21 @@
   .titlebar-no-drag {
     -webkit-app-region: no-drag;
   }
+
+  body.modal-open .titlebar-dim::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+  }
+
+  body.modal-open .titlebar-extra {
+    pointer-events: none;
+    opacity: 0.5;
+  }
+
+  body.modal-open .titlebar-root {
+    pointer-events: auto;
+  }
 }

@@ -63,7 +63,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       <DialogContent
         className="max-w-5xl p-0 overflow-hidden gap-0"
         showClose={false}
-        overlayClassName="bg-black/60"
+        overlayClassName="bg-black/50"
       >
         <div className="flex items-center justify-between p-4 border-b border-border">
           <DialogTitle className="text-lg font-bold text-text-primary">환경설정</DialogTitle>

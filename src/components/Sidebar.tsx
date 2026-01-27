@@ -10,6 +10,7 @@ import { Tooltip } from "./ui/tooltip";
 import { SidebarContextMenu } from "./SidebarContextMenu";
 import { Button } from "./ui/button";
 import { X } from "lucide-react";
+import { useModalBodyClass } from "../hooks/useModalBodyClass";
 
 export const Sidebar = () => {
   const {
@@ -51,6 +52,7 @@ export const Sidebar = () => {
     id: number;
   } | null>(null);
   const [deleteChecked, setDeleteChecked] = useState(false);
+  useModalBodyClass(!!deleteTarget);
 
   useEffect(() => {
     loadFolders();

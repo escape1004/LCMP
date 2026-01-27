@@ -4,6 +4,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Playlist } from "../types";
+import { useModalBodyClass } from "../hooks/useModalBodyClass";
 
 interface PlaylistModalProps {
   isOpen: boolean;
@@ -23,6 +24,7 @@ export const PlaylistModal = ({
   const [isDynamic, setIsDynamic] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  useModalBodyClass(isOpen);
 
   useEffect(() => {
     if (isOpen) {

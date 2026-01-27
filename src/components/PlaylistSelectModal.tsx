@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { Button } from "./ui/button";
 import { Playlist } from "../types";
 import { usePlaylistStore } from "../stores/playlistStore";
+import { useModalBodyClass } from "../hooks/useModalBodyClass";
 
 interface PlaylistSelectModalProps {
   isOpen: boolean;
@@ -20,6 +21,7 @@ export const PlaylistSelectModal = ({
   const { playlists, loadPlaylists } = usePlaylistStore();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  useModalBodyClass(isOpen);
 
   useEffect(() => {
     if (isOpen) {
