@@ -1,7 +1,7 @@
 use crate::database::get_connection;
 use crate::models::Song;
 use crate::commands::folder::scan_folder_for_songs;
-use crate::commands::player::extract_waveform;
+use crate::commands::player::{extract_metadata, extract_waveform};
 use rusqlite::{Result, params};
 use serde::{Deserialize, Serialize};
 use id3::TagLike;
@@ -10,10 +10,11 @@ use std::path::{Path, PathBuf};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 use tauri::api::path::cache_dir;
 use std::thread;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SongList {
@@ -63,6 +64,81 @@ fn normalize_optional_string(value: Option<String>) -> Option<String> {
             Some(trimmed.to_string())
         }
     })
+}
+
+type ExtractedMeta = (Option<String>, Option<String>, Option<String>, Option<i32>, Option<String>, Option<f64>);
+
+static METADATA_CACHE: OnceLock<Mutex<HashMap<String, (u64, ExtractedMeta)>>> = OnceLock::new();
+
+fn metadata_cache() -> &'static Mutex<HashMap<String, (u64, ExtractedMeta)>> {
+    METADATA_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn get_file_mtime_seconds(file_path: &str) -> Option<u64> {
+    let metadata = fs::metadata(file_path).ok()?;
+    let modified = metadata.modified().ok()?;
+    let duration = modified.duration_since(SystemTime::UNIX_EPOCH).ok()?;
+    Some(duration.as_secs())
+}
+
+fn merge_file_metadata(song: &mut Song) {
+    if !Path::new(&song.file_path).exists() {
+        return;
+    }
+    let mtime = match get_file_mtime_seconds(&song.file_path) {
+        Some(value) => value,
+        None => return,
+    };
+
+    let cached = {
+        let cache = metadata_cache().lock().ok();
+        cache.and_then(|map| map.get(&song.file_path).cloned())
+    };
+
+    let (title, artist, album, year, genre, duration) = if let Some((cached_mtime, cached_meta)) = cached {
+        if cached_mtime == mtime {
+            cached_meta
+        } else {
+            let extracted = extract_metadata(&song.file_path).ok();
+            if let Some(meta) = extracted {
+                if let Ok(mut map) = metadata_cache().lock() {
+                    map.insert(song.file_path.clone(), (mtime, meta.clone()));
+                }
+                meta
+            } else {
+                return;
+            }
+        }
+    } else {
+        let extracted = extract_metadata(&song.file_path).ok();
+        if let Some(meta) = extracted {
+            if let Ok(mut map) = metadata_cache().lock() {
+                map.insert(song.file_path.clone(), (mtime, meta.clone()));
+            }
+            meta
+        } else {
+            return;
+        }
+    };
+
+    if title.is_some() {
+        song.title = title;
+    }
+    if artist.is_some() {
+        song.artist = artist;
+    }
+    if album.is_some() {
+        song.album = album;
+    }
+    if year.is_some() {
+        song.year = year;
+    }
+    if genre.is_some() {
+        song.genre = genre;
+    }
+    if duration.is_some() {
+        song.duration = duration;
+    }
 }
 
 fn guess_mime_type(path: &str) -> Option<&'static str> {
@@ -752,7 +828,9 @@ pub async fn get_songs_by_folder(folder_id: i64) -> Result<SongList, String> {
     
     let mut songs = Vec::new();
     for song in song_iter {
-        songs.push(song.map_err(|e| e.to_string())?);
+        let mut song = song.map_err(|e| e.to_string())?;
+        merge_file_metadata(&mut song);
+        songs.push(song);
     }
     
     Ok(SongList { songs })
@@ -779,7 +857,9 @@ pub async fn get_songs_by_playlist(playlist_id: i64) -> Result<SongList, String>
     
     let mut songs = Vec::new();
     for song in song_iter {
-        songs.push(song.map_err(|e| e.to_string())?);
+        let mut song = song.map_err(|e| e.to_string())?;
+        merge_file_metadata(&mut song);
+        songs.push(song);
     }
     
     Ok(SongList { songs })
@@ -803,7 +883,9 @@ pub async fn get_all_songs() -> Result<SongList, String> {
     
     let mut songs = Vec::new();
     for song in song_iter {
-        songs.push(song.map_err(|e| e.to_string())?);
+        let mut song = song.map_err(|e| e.to_string())?;
+        merge_file_metadata(&mut song);
+        songs.push(song);
     }
     
     Ok(SongList { songs })
@@ -845,9 +927,10 @@ pub async fn get_song_by_id(song_id: i64) -> Result<Song, String> {
         )
         .map_err(|e| e.to_string())?;
     
-    let song = stmt
+    let mut song = stmt
         .query_row([song_id], |row| Song::from_row(row))
         .map_err(|e| e.to_string())?;
+    merge_file_metadata(&mut song);
     
     Ok(song)
 }
