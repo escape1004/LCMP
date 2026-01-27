@@ -1,5 +1,6 @@
 import { useQueueStore } from "../stores/queueStore";
 import { AlbumArtImage } from "./AlbumArtImage";
+import { Disc3 } from "lucide-react";
 
 export const QueueView = () => {
   const { queue, currentIndex, playSongAtIndex } = useQueueStore();
@@ -22,13 +23,13 @@ export const QueueView = () => {
             className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
             fallback={
               <div className="w-96 h-96 bg-hover rounded-lg flex items-center justify-center shadow-lg">
-                <span className="text-text-muted text-lg">앨범 커버</span>
+                <Disc3 className="w-12 h-12 text-text-muted/70" />
               </div>
             }
           />
         ) : (
           <div className="w-96 h-96 bg-hover rounded-lg flex items-center justify-center shadow-lg">
-            <span className="text-text-muted text-lg">앨범 커버</span>
+            <Disc3 className="w-12 h-12 text-text-muted/70" />
           </div>
         )}
       </div>
@@ -63,10 +64,10 @@ export const QueueView = () => {
                         path={song.album_art_path}
                         alt={song.title || "Album"}
                         className="w-full h-full object-cover rounded"
-                        fallback={<span className="text-text-muted text-xs">앨범</span>}
+                        fallback={<Disc3 className="w-5 h-5 text-text-muted/70" />}
                       />
                     ) : (
-                      <span className="text-text-muted text-xs">앨범</span>
+                      <Disc3 className="w-5 h-5 text-text-muted/70" />
                     )}
                   </div>
 

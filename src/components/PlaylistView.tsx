@@ -9,7 +9,7 @@ import { useToastStore } from '../stores/toastStore';
 import { Song } from '../types';
 import { invoke } from '@tauri-apps/api/tauri';
 import { ColumnSelectorDialog } from './ColumnSelectorDialog';
-import { ArrowUp, ArrowDown, Play, Search, X } from 'lucide-react';
+import { ArrowUp, ArrowDown, Play, Search, X, Disc3 } from 'lucide-react';
 import { Tooltip } from './ui/tooltip';
 import { Input } from './ui/input';
 import { SongContextMenu } from './SongContextMenu';
@@ -730,13 +730,13 @@ export const PlaylistView = () => {
                               className="w-12 h-12 object-cover rounded transition-colors duration-150 group-hover:ring-1 group-hover:ring-border"
                               fallback={
                                 <div className="w-12 h-12 bg-hover rounded flex items-center justify-center transition-colors duration-150 group-hover:ring-1 group-hover:ring-border">
-                                  <span className="text-text-muted text-xs">앨범</span>
+                                  <Disc3 className="w-5 h-5 text-text-muted/70" />
                                 </div>
                               }
                             />
                           ) : (
                             <div className="w-12 h-12 bg-hover rounded flex items-center justify-center transition-colors duration-150 group-hover:ring-1 group-hover:ring-border">
-                              <span className="text-text-muted text-xs">앨범</span>
+                              <Disc3 className="w-5 h-5 text-text-muted/70" />
                             </div>
                           )}
                         </div>

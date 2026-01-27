@@ -188,6 +188,7 @@ export const MetadataModal = ({ isOpen, song, onClose, onSave }: MetadataModalPr
                 >
                   {albumArtPath ? (
                     <AlbumArtImage
+                      filePath={song.file_path}
                       path={albumArtPath}
                       alt="Album Art"
                       className="w-full h-full object-cover"

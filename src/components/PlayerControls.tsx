@@ -1,4 +1,4 @@
-﻿import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, ChevronUp, Shuffle, Repeat, Repeat1 } from "lucide-react";
+﻿import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, ChevronUp, Shuffle, Repeat, Repeat1, Disc3 } from "lucide-react";
 import { useQueueStore } from "../stores/queueStore";
 import { usePlayerStore } from "../stores/playerStore";
 import { useEffect, useRef, useState } from "react";
@@ -209,10 +209,10 @@ export const PlayerControls = () => {
                 path={displaySong.album_art_path}
                 alt={displaySong.title || "Album"}
                 className="w-full h-full object-cover rounded"
-                fallback={<span className="text-text-muted text-xs">앨범</span>}
+                fallback={<Disc3 className="w-6 h-6 text-text-muted/70" />}
               />
             ) : (
-              <span className="text-text-muted text-xs">앨범</span>
+              <Disc3 className="w-6 h-6 text-text-muted/70" />
             )}
           </div>
           <div className="flex flex-col min-w-0 flex-1">
