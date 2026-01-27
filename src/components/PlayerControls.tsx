@@ -205,9 +205,11 @@ export const PlayerControls = () => {
           <div className="w-16 h-16 bg-hover rounded flex items-center justify-center flex-shrink-0">
             {displaySong?.album_art_path ? (
               <AlbumArtImage
+                filePath={displaySong.file_path}
                 path={displaySong.album_art_path}
                 alt={displaySong.title || "Album"}
                 className="w-full h-full object-cover rounded"
+                fallback={<span className="text-text-muted text-xs">앨범</span>}
               />
             ) : (
               <span className="text-text-muted text-xs">앨범</span>

@@ -6,15 +6,26 @@ use rusqlite::{Result, params};
 use serde::{Deserialize, Serialize};
 use id3::TagLike;
 use serde_json;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs;
+use std::hash::{Hash, Hasher};
+use std::collections::hash_map::DefaultHasher;
+use std::time::{Duration, SystemTime};
+use tauri::api::path::cache_dir;
 use std::thread;
 use std::sync::Mutex;
-use std::time::Duration;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SongList {
     pub songs: Vec<Song>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CachePruneResult {
+    pub removed_files: usize,
+    pub freed_bytes: u64,
+    pub remaining_files: usize,
+    pub remaining_bytes: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -357,6 +368,265 @@ fn update_flac_metadata(
         .map_err(|e| format!("Failed to write FLAC tag: {}", e))?;
     
     Ok(())
+}
+
+fn pick_album_art_path(cache_root: &Path, cache_key: &str) -> Option<PathBuf> {
+    let extensions = ["jpg", "jpeg", "png", "webp", "bmp"];
+    for ext in extensions {
+        let candidate = cache_root.join(format!("{}.{}", cache_key, ext));
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn extension_from_mime(mime: &str) -> &'static str {
+    match mime {
+        "image/png" => "png",
+        "image/webp" => "webp",
+        "image/bmp" => "bmp",
+        "image/jpeg" | "image/jpg" => "jpg",
+        _ => "jpg",
+    }
+}
+
+fn compute_cache_key(file_path: &str) -> Result<String, String> {
+    let metadata = fs::metadata(file_path).map_err(|e| format!("Failed to read file metadata: {}", e))?;
+    let modified = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+    let modified_ms = modified.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_millis();
+    let size = metadata.len();
+    
+    let mut hasher = DefaultHasher::new();
+    file_path.hash(&mut hasher);
+    size.hash(&mut hasher);
+    modified_ms.hash(&mut hasher);
+    let hash = hasher.finish();
+    Ok(format!("{:016x}", hash))
+}
+
+fn extract_embedded_art_mp3(file_path: &str) -> Result<Option<(Vec<u8>, String)>, String> {
+    if let Ok(tag) = id3::Tag::read_from_path(file_path) {
+        let mut cover = tag.pictures().find(|p| p.picture_type == id3::frame::PictureType::CoverFront);
+        if cover.is_none() {
+            cover = tag.pictures().next();
+        }
+        if let Some(picture) = cover {
+            return Ok(Some((picture.data.clone(), picture.mime_type.clone())));
+        }
+    }
+    Ok(None)
+}
+
+fn extract_embedded_art_flac(file_path: &str) -> Result<Option<(Vec<u8>, String)>, String> {
+    let tag = metaflac::Tag::read_from_path(file_path)
+        .map_err(|e| format!("Failed to read FLAC tag: {}", e))?;
+    let mut cover = tag.pictures().find(|p| p.picture_type == metaflac::block::PictureType::CoverFront);
+    if cover.is_none() {
+        cover = tag.pictures().next();
+    }
+    if let Some(picture) = cover {
+        return Ok(Some((picture.data.clone(), picture.mime_type.clone())));
+    }
+    Ok(None)
+}
+
+fn get_cache_root() -> Option<PathBuf> {
+    cache_dir().map(|root| root.join("lcmp").join("album_art"))
+}
+
+#[tauri::command]
+pub async fn get_album_art_cache_path(file_path: String) -> Result<Option<String>, String> {
+    if !Path::new(&file_path).exists() {
+        return Ok(None);
+    }
+    
+    let cache_root = if let Some(root) = get_cache_root() {
+        root
+    } else {
+        return Ok(None);
+    };
+    
+    fs::create_dir_all(&cache_root)
+        .map_err(|e| format!("Failed to create cache directory: {}", e))?;
+    
+    let cache_key = compute_cache_key(&file_path)?;
+    
+    if let Some(existing) = pick_album_art_path(&cache_root, &cache_key) {
+        return Ok(Some(existing.to_string_lossy().to_string()));
+    }
+    
+    let extension = Path::new(&file_path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|s| s.to_lowercase());
+    
+    let extracted = match extension.as_deref() {
+        Some("mp3") => extract_embedded_art_mp3(&file_path)?,
+        Some("flac") => extract_embedded_art_flac(&file_path)?,
+        _ => None,
+    };
+    
+    if let Some((data, mime)) = extracted {
+        let ext = extension_from_mime(&mime);
+        let output_path = cache_root.join(format!("{}.{}", cache_key, ext));
+        fs::write(&output_path, data)
+            .map_err(|e| format!("Failed to write album art cache: {}", e))?;
+        return Ok(Some(output_path.to_string_lossy().to_string()));
+    }
+    
+    Ok(None)
+}
+
+#[tauri::command]
+pub async fn clear_album_art_cache() -> Result<CachePruneResult, String> {
+    let cache_root = if let Some(root) = get_cache_root() {
+        root
+    } else {
+        return Ok(CachePruneResult {
+            removed_files: 0,
+            freed_bytes: 0,
+            remaining_files: 0,
+            remaining_bytes: 0,
+        });
+    };
+    
+    if !cache_root.exists() {
+        return Ok(CachePruneResult {
+            removed_files: 0,
+            freed_bytes: 0,
+            remaining_files: 0,
+            remaining_bytes: 0,
+        });
+    }
+    
+    let mut removed_files = 0usize;
+    let mut freed_bytes = 0u64;
+    
+    let entries = fs::read_dir(&cache_root)
+        .map_err(|e| format!("Failed to read cache directory: {}", e))?;
+    
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read cache entry: {}", e))?;
+        let path = entry.path();
+        if path.is_file() {
+            if let Ok(metadata) = entry.metadata() {
+                freed_bytes += metadata.len();
+            }
+            if fs::remove_file(&path).is_ok() {
+                removed_files += 1;
+            }
+        }
+    }
+    
+    Ok(CachePruneResult {
+        removed_files,
+        freed_bytes,
+        remaining_files: 0,
+        remaining_bytes: 0,
+    })
+}
+
+#[tauri::command]
+pub async fn prune_album_art_cache(max_size_mb: Option<u64>, max_age_days: Option<u64>) -> Result<CachePruneResult, String> {
+    let cache_root = if let Some(root) = get_cache_root() {
+        root
+    } else {
+        return Ok(CachePruneResult {
+            removed_files: 0,
+            freed_bytes: 0,
+            remaining_files: 0,
+            remaining_bytes: 0,
+        });
+    };
+    
+    if !cache_root.exists() {
+        return Ok(CachePruneResult {
+            removed_files: 0,
+            freed_bytes: 0,
+            remaining_files: 0,
+            remaining_bytes: 0,
+        });
+    }
+    
+    let mut files: Vec<(PathBuf, SystemTime, u64)> = Vec::new();
+    let entries = fs::read_dir(&cache_root)
+        .map_err(|e| format!("Failed to read cache directory: {}", e))?;
+    
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read cache entry: {}", e))?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let metadata = entry.metadata().map_err(|e| format!("Failed to read cache metadata: {}", e))?;
+        let modified = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+        files.push((path, modified, metadata.len()));
+    }
+    
+    let mut removed_files = 0usize;
+    let mut freed_bytes = 0u64;
+    
+    if let Some(days) = max_age_days {
+        let cutoff = SystemTime::now()
+            .checked_sub(Duration::from_secs(days * 24 * 60 * 60))
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+        for (path, modified, size) in files.iter() {
+            if *modified < cutoff {
+                if fs::remove_file(path).is_ok() {
+                    removed_files += 1;
+                    freed_bytes += *size;
+                }
+            }
+        }
+    }
+    
+    let mut remaining: Vec<(PathBuf, SystemTime, u64)> = Vec::new();
+    for (path, modified, size) in files.into_iter() {
+        if path.exists() {
+            remaining.push((path, modified, size));
+        }
+    }
+    
+    if let Some(max_mb) = max_size_mb {
+        let max_bytes = max_mb.saturating_mul(1024 * 1024);
+        remaining.sort_by_key(|(_, modified, _)| *modified);
+        let mut total_bytes: u64 = remaining.iter().map(|(_, _, size)| *size).sum();
+        
+        for (path, _, size) in remaining.iter() {
+            if total_bytes <= max_bytes {
+                break;
+            }
+            if fs::remove_file(path).is_ok() {
+                removed_files += 1;
+                freed_bytes += *size;
+                total_bytes = total_bytes.saturating_sub(*size);
+            }
+        }
+    }
+    
+    let mut remaining_files = 0usize;
+    let mut remaining_bytes = 0u64;
+    if cache_root.exists() {
+        let entries = fs::read_dir(&cache_root)
+            .map_err(|e| format!("Failed to read cache directory: {}", e))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("Failed to read cache entry: {}", e))?;
+            if let Ok(metadata) = entry.metadata() {
+                if entry.path().is_file() {
+                    remaining_files += 1;
+                    remaining_bytes += metadata.len();
+                }
+            }
+        }
+    }
+    
+    Ok(CachePruneResult {
+        removed_files,
+        freed_bytes,
+        remaining_files,
+        remaining_bytes,
+    })
 }
 
 // 현재 웨이폼 생성 중인 노래 ID를 추적하는 전역 상태

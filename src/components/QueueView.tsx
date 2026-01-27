@@ -16,9 +16,15 @@ export const QueueView = () => {
       <div className="flex-1 flex items-center justify-center bg-bg-primary h-full">
         {currentSong?.album_art_path ? (
           <AlbumArtImage
+            filePath={currentSong.file_path}
             path={currentSong.album_art_path}
             alt={currentSong.title || "Album Art"}
             className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
+            fallback={
+              <div className="w-96 h-96 bg-hover rounded-lg flex items-center justify-center shadow-lg">
+                <span className="text-text-muted text-lg">앨범 커버</span>
+              </div>
+            }
           />
         ) : (
           <div className="w-96 h-96 bg-hover rounded-lg flex items-center justify-center shadow-lg">
@@ -53,9 +59,11 @@ export const QueueView = () => {
                   <div className="w-12 h-12 bg-hover rounded flex items-center justify-center flex-shrink-0">
                     {song.album_art_path ? (
                       <AlbumArtImage
+                        filePath={song.file_path}
                         path={song.album_art_path}
                         alt={song.title || "Album"}
                         className="w-full h-full object-cover rounded"
+                        fallback={<span className="text-text-muted text-xs">앨범</span>}
                       />
                     ) : (
                       <span className="text-text-muted text-xs">앨범</span>

@@ -565,7 +565,7 @@ export const PlaylistView = () => {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-text-muted" />
             <Input
               type="text"
-              placeholder="검색..."
+              placeholder="검색어를 입력해주세요."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className={`pl-9 ${searchQuery ? 'pr-9' : ''}`}
@@ -724,9 +724,15 @@ export const PlaylistView = () => {
                         <div className="flex items-center justify-center w-full h-12">
                           {song.album_art_path ? (
                             <AlbumArtImage
+                              filePath={song.file_path}
                               path={song.album_art_path}
                               alt={song.album || 'Album'}
                               className="w-12 h-12 object-cover rounded transition-colors duration-150 group-hover:ring-1 group-hover:ring-border"
+                              fallback={
+                                <div className="w-12 h-12 bg-hover rounded flex items-center justify-center transition-colors duration-150 group-hover:ring-1 group-hover:ring-border">
+                                  <span className="text-text-muted text-xs">앨범</span>
+                                </div>
+                              }
                             />
                           ) : (
                             <div className="w-12 h-12 bg-hover rounded flex items-center justify-center transition-colors duration-150 group-hover:ring-1 group-hover:ring-border">
