@@ -1,4 +1,5 @@
 import { useQueueStore } from "../stores/queueStore";
+import { AlbumArtImage } from "./AlbumArtImage";
 
 export const QueueView = () => {
   const { queue, currentIndex, playSongAtIndex } = useQueueStore();
@@ -14,8 +15,8 @@ export const QueueView = () => {
       {/* 좌측: 앨범 커버/동영상 */}
       <div className="flex-1 flex items-center justify-center bg-bg-primary h-full">
         {currentSong?.album_art_path ? (
-          <img
-            src={currentSong.album_art_path}
+          <AlbumArtImage
+            path={currentSong.album_art_path}
             alt={currentSong.title || "Album Art"}
             className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
           />
@@ -51,8 +52,8 @@ export const QueueView = () => {
                   {/* 앨범 아트 썸네일 */}
                   <div className="w-12 h-12 bg-hover rounded flex items-center justify-center flex-shrink-0">
                     {song.album_art_path ? (
-                      <img
-                        src={song.album_art_path}
+                      <AlbumArtImage
+                        path={song.album_art_path}
                         alt={song.title || "Album"}
                         className="w-full h-full object-cover rounded"
                       />
@@ -98,4 +99,3 @@ function formatDuration(seconds: number): string {
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
-

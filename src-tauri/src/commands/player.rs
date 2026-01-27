@@ -683,7 +683,6 @@ fn play_audio_thread(file_path: String, state: Arc<Mutex<PlayerState>>, app_hand
     let (tx, rx) = mpsc::sync_channel::<Vec<f32>>(buffer_size);
     
     // 디코딩 스레드 (format과 decoder를 클로저로 이동)
-    let state_clone = state.clone();
     let rt_state_clone = rt_state.clone(); // ✅ 디코딩 스레드에서 사용
     let mut format_reader = probed.format;
     let needs_resampling = source_sample_rate != target_sample_rate;

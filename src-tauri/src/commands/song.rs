@@ -2,8 +2,9 @@ use crate::database::get_connection;
 use crate::models::Song;
 use crate::commands::folder::scan_folder_for_songs;
 use crate::commands::player::extract_waveform;
-use rusqlite::Result;
+use rusqlite::{Result, params};
 use serde::{Deserialize, Serialize};
+use id3::TagLike;
 use serde_json;
 use std::path::Path;
 use std::fs;
@@ -14,6 +15,237 @@ use std::time::Duration;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SongList {
     pub songs: Vec<Song>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSongMetadataPayload {
+    pub song_id: i64,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub year: Option<i32>,
+    pub genre: Option<String>,
+    pub album_artist: Option<String>,
+    pub track_number: Option<u32>,
+    pub disc_number: Option<u32>,
+    pub comment: Option<String>,
+    pub album_art_path: Option<String>,
+}
+
+fn normalize_optional_string(value: Option<String>) -> Option<String> {
+    value.and_then(|val| {
+        let trimmed = val.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+fn guess_mime_type(path: &str) -> Option<&'static str> {
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_lowercase());
+    
+    match ext.as_deref() {
+        Some("jpg") | Some("jpeg") => Some("image/jpeg"),
+        Some("png") => Some("image/png"),
+        Some("webp") => Some("image/webp"),
+        Some("bmp") => Some("image/bmp"),
+        _ => None,
+    }
+}
+
+fn update_mp3_metadata(
+    file_path: &str,
+    title: &Option<String>,
+    artist: &Option<String>,
+    album: &Option<String>,
+    year: Option<i32>,
+    genre: &Option<String>,
+    album_artist: &Option<String>,
+    track_number: Option<u32>,
+    disc_number: Option<u32>,
+    comment: &Option<String>,
+    album_art_path: &Option<String>,
+) -> Result<(), String> {
+    use id3::frame::{Comment, Picture, PictureType};
+    use id3::Tag;
+    
+    let mut tag = Tag::read_from_path(file_path).unwrap_or_else(|_| Tag::new());
+    
+    if let Some(value) = title.as_deref() {
+        tag.set_title(value);
+    } else {
+        tag.remove("TIT2");
+    }
+    
+    if let Some(value) = artist.as_deref() {
+        tag.set_artist(value);
+    } else {
+        tag.remove("TPE1");
+    }
+    
+    if let Some(value) = album.as_deref() {
+        tag.set_album(value);
+    } else {
+        tag.remove("TALB");
+    }
+    
+    if let Some(value) = album_artist.as_deref() {
+        tag.set_album_artist(value);
+    } else {
+        tag.remove("TPE2");
+    }
+    
+    if let Some(value) = year {
+        tag.set_year(value);
+    } else {
+        tag.remove("TDRC");
+        tag.remove("TYER");
+    }
+    
+    if let Some(value) = genre.as_deref() {
+        tag.set_genre(value);
+    } else {
+        tag.remove("TCON");
+    }
+    
+    if let Some(value) = track_number {
+        tag.set_track(value);
+    } else {
+        tag.remove("TRCK");
+    }
+    
+    if let Some(value) = disc_number {
+        tag.set_disc(value);
+    } else {
+        tag.remove("TPOS");
+    }
+    
+    tag.remove("COMM");
+    if let Some(value) = comment.as_deref() {
+        tag.add_frame(Comment {
+            lang: "eng".to_string(),
+            description: String::new(),
+            text: value.to_string(),
+        });
+    }
+    
+    if let Some(cover_path) = album_art_path.as_deref() {
+        let mime_type = guess_mime_type(cover_path)
+            .ok_or_else(|| "Unsupported cover image format".to_string())?;
+        let image_data = fs::read(cover_path)
+            .map_err(|e| format!("Failed to read cover image: {}", e))?;
+        
+        tag.remove_picture_by_type(PictureType::CoverFront);
+        tag.add_frame(Picture {
+            mime_type: mime_type.to_string(),
+            picture_type: PictureType::CoverFront,
+            description: String::new(),
+            data: image_data,
+        });
+    }
+    
+    tag.write_to_path(file_path, id3::Version::Id3v24)
+        .map_err(|e| format!("Failed to write ID3 tag: {}", e))?;
+    
+    Ok(())
+}
+
+fn update_flac_metadata(
+    file_path: &str,
+    title: &Option<String>,
+    artist: &Option<String>,
+    album: &Option<String>,
+    year: Option<i32>,
+    genre: &Option<String>,
+    album_artist: &Option<String>,
+    track_number: Option<u32>,
+    disc_number: Option<u32>,
+    comment: &Option<String>,
+    album_art_path: &Option<String>,
+) -> Result<(), String> {
+    use metaflac::block::PictureType as FlacPictureType;
+    
+    let mut tag = metaflac::Tag::read_from_path(file_path)
+        .map_err(|e| format!("Failed to read FLAC tag: {}", e))?;
+    
+    {
+        let vorbis = tag.vorbis_comments_mut();
+        
+        if let Some(value) = title.as_deref() {
+            vorbis.set_title(vec![value.to_string()]);
+        } else {
+            vorbis.comments.remove("TITLE");
+        }
+        
+        if let Some(value) = artist.as_deref() {
+            vorbis.set_artist(vec![value.to_string()]);
+        } else {
+            vorbis.comments.remove("ARTIST");
+        }
+        
+        if let Some(value) = album.as_deref() {
+            vorbis.set_album(vec![value.to_string()]);
+        } else {
+            vorbis.comments.remove("ALBUM");
+        }
+        
+        if let Some(value) = album_artist.as_deref() {
+            vorbis.set_album_artist(vec![value.to_string()]);
+        } else {
+            vorbis.comments.remove("ALBUMARTIST");
+        }
+        
+        if let Some(value) = year {
+            vorbis.comments.insert("DATE".to_string(), vec![value.to_string()]);
+        } else {
+            vorbis.comments.remove("DATE");
+        }
+        
+        if let Some(value) = genre.as_deref() {
+            vorbis.set_genre(vec![value.to_string()]);
+        } else {
+            vorbis.comments.remove("GENRE");
+        }
+        
+        if let Some(value) = track_number {
+            vorbis.set_track(value);
+        } else {
+            vorbis.comments.remove("TRACKNUMBER");
+        }
+        
+        if let Some(value) = disc_number {
+            vorbis.comments.insert("DISCNUMBER".to_string(), vec![value.to_string()]);
+        } else {
+            vorbis.comments.remove("DISCNUMBER");
+        }
+        
+        if let Some(value) = comment.as_deref() {
+            vorbis.comments.insert("COMMENT".to_string(), vec![value.to_string()]);
+        } else {
+            vorbis.comments.remove("COMMENT");
+        }
+    }
+    
+    if let Some(cover_path) = album_art_path.as_deref() {
+        let mime_type = guess_mime_type(cover_path)
+            .ok_or_else(|| "Unsupported cover image format".to_string())?;
+        let image_data = fs::read(cover_path)
+            .map_err(|e| format!("Failed to read cover image: {}", e))?;
+        
+        tag.remove_picture_type(FlacPictureType::CoverFront);
+        tag.add_picture(mime_type, FlacPictureType::CoverFront, image_data);
+    }
+    
+    tag.write_to_path(file_path)
+        .map_err(|e| format!("Failed to write FLAC tag: {}", e))?;
+    
+    Ok(())
 }
 
 // 현재 웨이폼 생성 중인 노래 ID를 추적하는 전역 상태
@@ -234,6 +466,100 @@ pub async fn get_song_by_id(song_id: i64) -> Result<Song, String> {
     
     let song = stmt
         .query_row([song_id], |row| Song::from_row(row))
+        .map_err(|e| e.to_string())?;
+    
+    Ok(song)
+}
+
+#[tauri::command]
+pub async fn update_song_metadata(payload: UpdateSongMetadataPayload) -> Result<Song, String> {
+    let conn = get_connection().map_err(|e| e.to_string())?;
+    
+    let file_path: String = conn
+        .query_row(
+            "SELECT file_path FROM songs WHERE id = ?1",
+            [payload.song_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Failed to load song path: {}", e))?;
+    
+    if !Path::new(&file_path).exists() {
+        return Err("파일이 존재하지 않습니다.".to_string());
+    }
+    
+    let title = normalize_optional_string(payload.title);
+    let artist = normalize_optional_string(payload.artist);
+    let album = normalize_optional_string(payload.album);
+    let genre = normalize_optional_string(payload.genre);
+    let album_artist = normalize_optional_string(payload.album_artist);
+    let comment = normalize_optional_string(payload.comment);
+    let album_art_path = normalize_optional_string(payload.album_art_path);
+    
+    let extension = Path::new(&file_path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|s| s.to_lowercase());
+    
+    match extension.as_deref() {
+        Some("mp3") => {
+            update_mp3_metadata(
+                &file_path,
+                &title,
+                &artist,
+                &album,
+                payload.year,
+                &genre,
+                &album_artist,
+                payload.track_number,
+                payload.disc_number,
+                &comment,
+                &album_art_path,
+            )?;
+        }
+        Some("flac") => {
+            update_flac_metadata(
+                &file_path,
+                &title,
+                &artist,
+                &album,
+                payload.year,
+                &genre,
+                &album_artist,
+                payload.track_number,
+                payload.disc_number,
+                &comment,
+                &album_art_path,
+            )?;
+        }
+        _ => {}
+    }
+    
+    conn.execute(
+        "UPDATE songs 
+         SET title = ?1, artist = ?2, album = ?3, year = ?4, genre = ?5, album_art_path = ?6, updated_at = CURRENT_TIMESTAMP 
+         WHERE id = ?7",
+        params![
+            &title,
+            &artist,
+            &album,
+            &payload.year,
+            &genre,
+            &album_art_path,
+            payload.song_id
+        ],
+    )
+    .map_err(|e| format!("Failed to update song metadata: {}", e))?;
+    
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, file_path, title, artist, album, duration, year, genre, album_art_path, created_at, updated_at, waveform_data 
+             FROM songs 
+             WHERE id = ?1"
+        )
+        .map_err(|e| e.to_string())?;
+    
+    let song = stmt
+        .query_row([payload.song_id], |row| Song::from_row(row))
         .map_err(|e| e.to_string())?;
     
     Ok(song)

@@ -4,6 +4,7 @@ import { usePlayerStore } from "../stores/playerStore";
 import { useEffect, useRef, useState } from "react";
 import { Tooltip } from "./ui/tooltip";
 import { invoke } from "@tauri-apps/api/tauri";
+import { AlbumArtImage } from "./AlbumArtImage";
 
 export const PlayerControls = () => {
   const { isOpen, toggleQueue, queue, currentIndex, playNext, playPrevious } = useQueueStore();
@@ -203,8 +204,8 @@ export const PlayerControls = () => {
         >
           <div className="w-16 h-16 bg-hover rounded flex items-center justify-center flex-shrink-0">
             {displaySong?.album_art_path ? (
-              <img
-                src={displaySong.album_art_path}
+              <AlbumArtImage
+                path={displaySong.album_art_path}
                 alt={displaySong.title || "Album"}
                 className="w-full h-full object-cover rounded"
               />

@@ -14,6 +14,8 @@ import { Tooltip } from './ui/tooltip';
 import { Input } from './ui/input';
 import { SongContextMenu } from './SongContextMenu';
 import { PlaylistSelectModal } from './PlaylistSelectModal';
+import { MetadataModal } from './MetadataModal';
+import { AlbumArtImage } from './AlbumArtImage';
 
 const formatDuration = (seconds: number | null): string => {
   if (seconds === null || seconds === undefined) return '--:--';
@@ -43,6 +45,8 @@ export const PlaylistView = () => {
   const loadSongsByPlaylist = useSongStore((state) => state.loadSongsByPlaylist);
   const clearSongs = useSongStore((state) => state.clearSongs);
   const checkGeneratingWaveform = useSongStore((state) => state.checkGeneratingWaveform);
+  const updateSong = useSongStore((state) => state.updateSong);
+  const refreshCurrentList = useSongStore((state) => state.refreshCurrentList);
   
   // songsVersion이 변경되면 강제로 리렌더링
   const [songs, setSongs] = useState<Song[]>(storeSongs);
@@ -84,6 +88,8 @@ export const PlaylistView = () => {
     x: number;
     y: number;
   } | null>(null);
+  const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false);
+  const [selectedSongForMetadata, setSelectedSongForMetadata] = useState<Song | null>(null);
   
   // 플레이리스트 선택 모달
   const [isPlaylistSelectModalOpen, setIsPlaylistSelectModalOpen] = useState(false);
@@ -452,8 +458,40 @@ export const PlaylistView = () => {
   };
 
   const handleEditMetadata = (song: Song) => {
-    // TODO: 메타데이터 수정 기능 구현
-    console.log('Edit metadata:', song);
+    setSelectedSongForMetadata(song);
+    setIsMetadataModalOpen(true);
+  };
+  
+  const handleMetadataSave = async (payload: {
+    title: string;
+    artist: string;
+    album: string;
+    year: number | null;
+    genre: string;
+    albumArtist: string;
+    trackNumber: number | null;
+    discNumber: number | null;
+    comment: string;
+    albumArtPath: string;
+  }) => {
+    if (!selectedSongForMetadata) return;
+    
+    try {
+      const updatedSong = await invoke<Song>('update_song_metadata', {
+        payload: {
+          songId: selectedSongForMetadata.id,
+          ...payload,
+        },
+      });
+      
+      updateSong(updatedSong);
+      showToast("메타데이터가 저장되었습니다.");
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      showToast(errorMessage || "메타데이터 저장에 실패했습니다.");
+      await refreshCurrentList();
+      throw error;
+    }
   };
 
   // 현재 보이는 노래들(검색 결과 포함)을 대기열에 추가 (웨이폼이 있는 노래만 추가)
@@ -675,8 +713,8 @@ export const PlaylistView = () => {
                       return (
                         <div className="flex items-center justify-center w-full h-12">
                           {song.album_art_path ? (
-                            <img
-                              src={song.album_art_path}
+                            <AlbumArtImage
+                              path={song.album_art_path}
                               alt={song.album || 'Album'}
                               className="w-12 h-12 object-cover rounded transition-colors duration-150 group-hover:ring-1 group-hover:ring-border"
                             />
@@ -825,7 +863,16 @@ export const PlaylistView = () => {
         onSelect={handlePlaylistSelect}
         songTitle={selectedSongForPlaylist?.title || undefined}
       />
+
+      <MetadataModal
+        isOpen={isMetadataModalOpen}
+        song={selectedSongForMetadata}
+        onSave={handleMetadataSave}
+        onClose={() => {
+          setIsMetadataModalOpen(false);
+          setSelectedSongForMetadata(null);
+        }}
+      />
     </div>
   );
 };
-
