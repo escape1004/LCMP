@@ -838,6 +838,7 @@ export const PlaylistView = () => {
                         margin: 0,
                         height: 'calc(100% + 1px)'
                       }}
+                      onContextMenu={(e) => handleSongContextMenu(e, song)}
                       onDoubleClick={hasWaveform ? () => handleSongDoubleClick(song) : undefined}
                     />
                   </tr>
