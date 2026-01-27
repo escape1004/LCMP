@@ -31,6 +31,16 @@ pub struct UpdateSongMetadataPayload {
     pub disc_number: Option<u32>,
     pub comment: Option<String>,
     pub album_art_path: Option<String>,
+    pub composer: Option<String>,
+    pub lyricist: Option<String>,
+    pub bpm: Option<u32>,
+    pub key: Option<String>,
+    pub copyright: Option<String>,
+    pub encoder: Option<String>,
+    pub isrc: Option<String>,
+    pub publisher: Option<String>,
+    pub subtitle: Option<String>,
+    pub grouping: Option<String>,
 }
 
 fn normalize_optional_string(value: Option<String>) -> Option<String> {
@@ -71,11 +81,28 @@ fn update_mp3_metadata(
     disc_number: Option<u32>,
     comment: &Option<String>,
     album_art_path: &Option<String>,
+    composer: &Option<String>,
+    lyricist: &Option<String>,
+    bpm: Option<u32>,
+    key: &Option<String>,
+    copyright: &Option<String>,
+    encoder: &Option<String>,
+    isrc: &Option<String>,
+    publisher: &Option<String>,
+    subtitle: &Option<String>,
+    grouping: &Option<String>,
 ) -> Result<(), String> {
-    use id3::frame::{Comment, Picture, PictureType};
+    use id3::frame::{Comment, Picture, PictureType, Content, Frame};
     use id3::Tag;
     
     let mut tag = Tag::read_from_path(file_path).unwrap_or_else(|_| Tag::new());
+
+    fn set_text_frame(tag: &mut Tag, frame_id: &str, value: &Option<String>) {
+        tag.remove(frame_id);
+        if let Some(text) = value.as_deref() {
+            tag.add_frame(Frame::with_content(frame_id, Content::Text(text.to_string())));
+        }
+    }
     
     if let Some(value) = title.as_deref() {
         tag.set_title(value);
@@ -135,6 +162,20 @@ fn update_mp3_metadata(
         });
     }
     
+    let bpm_text = bpm.map(|v| v.to_string());
+    set_text_frame(&mut tag, "TCOM", composer);
+    set_text_frame(&mut tag, "TEXT", lyricist);
+    set_text_frame(&mut tag, "TBPM", &bpm_text);
+    set_text_frame(&mut tag, "TKEY", key);
+    set_text_frame(&mut tag, "TCOP", copyright);
+    set_text_frame(&mut tag, "TENC", encoder);
+    set_text_frame(&mut tag, "TSRC", isrc);
+    set_text_frame(&mut tag, "TPUB", publisher);
+    set_text_frame(&mut tag, "TIT3", subtitle);
+    set_text_frame(&mut tag, "TIT1", grouping);
+    
+    tag.remove("USLT");
+    
     if let Some(cover_path) = album_art_path.as_deref() {
         let mime_type = guess_mime_type(cover_path)
             .ok_or_else(|| "Unsupported cover image format".to_string())?;
@@ -168,6 +209,16 @@ fn update_flac_metadata(
     disc_number: Option<u32>,
     comment: &Option<String>,
     album_art_path: &Option<String>,
+    composer: &Option<String>,
+    lyricist: &Option<String>,
+    bpm: Option<u32>,
+    key: &Option<String>,
+    copyright: &Option<String>,
+    encoder: &Option<String>,
+    isrc: &Option<String>,
+    publisher: &Option<String>,
+    subtitle: &Option<String>,
+    grouping: &Option<String>,
 ) -> Result<(), String> {
     use metaflac::block::PictureType as FlacPictureType;
     
@@ -229,6 +280,66 @@ fn update_flac_metadata(
             vorbis.comments.insert("COMMENT".to_string(), vec![value.to_string()]);
         } else {
             vorbis.comments.remove("COMMENT");
+        }
+        
+        if let Some(value) = composer.as_deref() {
+            vorbis.comments.insert("COMPOSER".to_string(), vec![value.to_string()]);
+        } else {
+            vorbis.comments.remove("COMPOSER");
+        }
+        
+        if let Some(value) = lyricist.as_deref() {
+            vorbis.comments.insert("LYRICIST".to_string(), vec![value.to_string()]);
+        } else {
+            vorbis.comments.remove("LYRICIST");
+        }
+        
+        if let Some(value) = bpm {
+            vorbis.comments.insert("BPM".to_string(), vec![value.to_string()]);
+        } else {
+            vorbis.comments.remove("BPM");
+        }
+        
+        if let Some(value) = key.as_deref() {
+            vorbis.comments.insert("KEY".to_string(), vec![value.to_string()]);
+        } else {
+            vorbis.comments.remove("KEY");
+        }
+        
+        if let Some(value) = copyright.as_deref() {
+            vorbis.comments.insert("COPYRIGHT".to_string(), vec![value.to_string()]);
+        } else {
+            vorbis.comments.remove("COPYRIGHT");
+        }
+        
+        if let Some(value) = encoder.as_deref() {
+            vorbis.comments.insert("ENCODER".to_string(), vec![value.to_string()]);
+        } else {
+            vorbis.comments.remove("ENCODER");
+        }
+        
+        if let Some(value) = isrc.as_deref() {
+            vorbis.comments.insert("ISRC".to_string(), vec![value.to_string()]);
+        } else {
+            vorbis.comments.remove("ISRC");
+        }
+        
+        if let Some(value) = publisher.as_deref() {
+            vorbis.comments.insert("PUBLISHER".to_string(), vec![value.to_string()]);
+        } else {
+            vorbis.comments.remove("PUBLISHER");
+        }
+        
+        if let Some(value) = subtitle.as_deref() {
+            vorbis.comments.insert("SUBTITLE".to_string(), vec![value.to_string()]);
+        } else {
+            vorbis.comments.remove("SUBTITLE");
+        }
+        
+        if let Some(value) = grouping.as_deref() {
+            vorbis.comments.insert("GROUPING".to_string(), vec![value.to_string()]);
+        } else {
+            vorbis.comments.remove("GROUPING");
         }
     }
     
@@ -494,6 +605,15 @@ pub async fn update_song_metadata(payload: UpdateSongMetadataPayload) -> Result<
     let album_artist = normalize_optional_string(payload.album_artist);
     let comment = normalize_optional_string(payload.comment);
     let album_art_path = normalize_optional_string(payload.album_art_path);
+    let composer = normalize_optional_string(payload.composer);
+    let lyricist = normalize_optional_string(payload.lyricist);
+    let key = normalize_optional_string(payload.key);
+    let copyright = normalize_optional_string(payload.copyright);
+    let encoder = normalize_optional_string(payload.encoder);
+    let isrc = normalize_optional_string(payload.isrc);
+    let publisher = normalize_optional_string(payload.publisher);
+    let subtitle = normalize_optional_string(payload.subtitle);
+    let grouping = normalize_optional_string(payload.grouping);
     
     let extension = Path::new(&file_path)
         .extension()
@@ -514,6 +634,16 @@ pub async fn update_song_metadata(payload: UpdateSongMetadataPayload) -> Result<
                 payload.disc_number,
                 &comment,
                 &album_art_path,
+                &composer,
+                &lyricist,
+                payload.bpm,
+                &key,
+                &copyright,
+                &encoder,
+                &isrc,
+                &publisher,
+                &subtitle,
+                &grouping,
             )?;
         }
         Some("flac") => {
@@ -529,6 +659,16 @@ pub async fn update_song_metadata(payload: UpdateSongMetadataPayload) -> Result<
                 payload.disc_number,
                 &comment,
                 &album_art_path,
+                &composer,
+                &lyricist,
+                payload.bpm,
+                &key,
+                &copyright,
+                &encoder,
+                &isrc,
+                &publisher,
+                &subtitle,
+                &grouping,
             )?;
         }
         _ => {}

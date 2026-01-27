@@ -473,6 +473,16 @@ export const PlaylistView = () => {
     discNumber: number | null;
     comment: string;
     albumArtPath: string;
+    composer: string;
+    lyricist: string;
+    bpm: number | null;
+    key: string;
+    copyright: string;
+    encoder: string;
+    isrc: string;
+    publisher: string;
+    subtitle: string;
+    grouping: string;
   }) => {
     if (!selectedSongForMetadata) return;
     
