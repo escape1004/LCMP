@@ -29,6 +29,14 @@ pub struct CachePruneResult {
     pub remaining_bytes: u64,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoSync {
+    pub song_id: i64,
+    pub video_path: String,
+    pub delay_ms: i64,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateSongMetadataPayload {
@@ -145,6 +153,64 @@ pub async fn get_all_tags() -> Result<Vec<String>, String> {
         tags.push(tag.map_err(|e| e.to_string())?);
     }
     Ok(tags)
+}
+
+#[tauri::command]
+pub async fn get_video_sync(song_id: i64) -> Result<Option<VideoSync>, String> {
+    let conn = get_connection().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT song_id, video_path, delay_ms
+             FROM video_syncs
+             WHERE song_id = ?1",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let mut rows = stmt.query([song_id]).map_err(|e| e.to_string())?;
+    if let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        Ok(Some(VideoSync {
+            song_id: row.get(0).map_err(|e| e.to_string())?,
+            video_path: row.get(1).map_err(|e| e.to_string())?,
+            delay_ms: row.get(2).map_err(|e| e.to_string())?,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+pub async fn set_video_sync(song_id: i64, video_path: String, delay_ms: i64) -> Result<VideoSync, String> {
+    let conn = get_connection().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO video_syncs (song_id, video_path, delay_ms)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(song_id) DO UPDATE SET
+           video_path = excluded.video_path,
+           delay_ms = excluded.delay_ms",
+        params![song_id, video_path, delay_ms],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(VideoSync { song_id, video_path, delay_ms })
+}
+
+#[tauri::command]
+pub async fn update_video_sync_delay(song_id: i64, delay_ms: i64) -> Result<(), String> {
+    let conn = get_connection().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE video_syncs SET delay_ms = ?1 WHERE song_id = ?2",
+        params![delay_ms, song_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn clear_video_sync(song_id: i64) -> Result<(), String> {
+    let conn = get_connection().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM video_syncs WHERE song_id = ?1", [song_id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 type ExtractedMeta = (

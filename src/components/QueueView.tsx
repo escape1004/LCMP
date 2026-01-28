@@ -1,22 +1,355 @@
-﻿import { useQueueStore } from "../stores/queueStore";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { invoke } from "@tauri-apps/api/tauri";
+import { exists } from "@tauri-apps/api/fs";
+import { useQueueStore } from "../stores/queueStore";
+import { usePlayerStore } from "../stores/playerStore";
+import { usePlaylistStore } from "../stores/playlistStore";
+import { useSongStore } from "../stores/songStore";
+import { useToastStore } from "../stores/toastStore";
 import { AlbumArtImage } from "./AlbumArtImage";
-import { Disc3 } from "lucide-react";
+import { SongContextMenu } from "./SongContextMenu";
+import { PlaylistSelectModal } from "./PlaylistSelectModal";
+import { MetadataModal } from "./MetadataModal";
+import { TagModal } from "./TagModal";
+import { Song } from "../types";
+import { Disc3, Film, ImageIcon } from "lucide-react";
+import { toFileSrc } from "../lib/tauri";
+
+type VideoSync = {
+  songId: number;
+  videoPath: string;
+  delayMs: number;
+};
 
 export const QueueView = () => {
-  const { queue, currentIndex, playSongAtIndex } = useQueueStore();
+  const { queue, currentIndex, playSongAtIndex, removeFromQueue } = useQueueStore();
+  const { currentTime, isPlaying } = usePlayerStore();
+  const { playlists } = usePlaylistStore();
+  const { updateSong, refreshCurrentList } = useSongStore();
+  const { showToast } = useToastStore();
 
   const currentSong = currentIndex !== null ? queue[currentIndex] : null;
+  const [mediaMode, setMediaMode] = useState<"cover" | "video">("cover");
+  const [videoPath, setVideoPath] = useState<string | null>(null);
+  const [syncOffsetMs, setSyncOffsetMs] = useState(0);
+  const [isVideoReady, setIsVideoReady] = useState(false);
+  const [isVideoLoading, setIsVideoLoading] = useState(false);
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const syncTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const saveDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [contextMenu, setContextMenu] = useState<{
+    song: Song;
+    index: number;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false);
+  const [selectedSongForMetadata, setSelectedSongForMetadata] = useState<Song | null>(null);
+  const [isTagModalOpen, setIsTagModalOpen] = useState(false);
+  const [selectedSongForTags, setSelectedSongForTags] = useState<Song | null>(null);
+  const [isPlaylistSelectModalOpen, setIsPlaylistSelectModalOpen] = useState(false);
+  const [selectedSongForPlaylist, setSelectedSongForPlaylist] = useState<Song | null>(null);
+
+  const videoSrc = useMemo(() => toFileSrc(videoPath), [videoPath]);
 
   const handleSongClick = async (index: number) => {
     await playSongAtIndex(index);
   };
 
+  const handleSongContextMenu = (e: ReactMouseEvent, song: Song, index: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ song, index, x: e.clientX, y: e.clientY });
+  };
+
+  const handleRemoveFromQueue = (_song: Song) => {
+    if (!contextMenu) return;
+    removeFromQueue(contextMenu.index);
+  };
+
+  const handleEditMetadata = (song: Song) => {
+    setSelectedSongForMetadata(song);
+    setIsMetadataModalOpen(true);
+  };
+
+  const handleEditTags = (song: Song) => {
+    setSelectedSongForTags(song);
+    setIsTagModalOpen(true);
+  };
+
+  const handleMetadataSave = async (payload: {
+    title: string;
+    artist: string;
+    album: string;
+    year: number | null;
+    genre: string;
+    albumArtist: string;
+    trackNumber: number | null;
+    discNumber: number | null;
+    comment: string;
+    albumArtPath: string;
+    composer: string;
+    lyricist: string;
+    bpm: number | null;
+    key: string;
+    copyright: string;
+    encoder: string;
+    isrc: string;
+    publisher: string;
+    subtitle: string;
+    grouping: string;
+  }) => {
+    if (!selectedSongForMetadata) return;
+    try {
+      const updatedSong = await invoke<Song>('update_song_metadata', {
+        payload: {
+          songId: selectedSongForMetadata.id,
+          ...payload,
+        },
+      });
+      updateSong(updatedSong);
+      showToast('메타데이터가 저장되었습니다.');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      showToast(errorMessage || '메타데이터 저장에 실패했습니다.');
+      await refreshCurrentList();
+      throw error;
+    }
+  };
+
+  const handleTagSave = async (tags: string[]) => {
+    if (!selectedSongForTags) return;
+    try {
+      const updatedSong = await invoke<Song>('update_song_tags', {
+        payload: {
+          songId: selectedSongForTags.id,
+          tags,
+        },
+      });
+      updateSong(updatedSong);
+      showToast('태그가 저장되었습니다.');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      showToast(errorMessage || '태그 저장에 실패했습니다.');
+      await refreshCurrentList();
+      throw error;
+    }
+  };
+
+  const handleAddToPlaylist = (song: Song) => {
+    setSelectedSongForPlaylist(song);
+    setIsPlaylistSelectModalOpen(true);
+  };
+
+  const handlePlaylistSelect = async (playlistId: number) => {
+    if (!selectedSongForPlaylist) return;
+    try {
+      await invoke('add_song_to_playlist', {
+        playlistId,
+        songId: selectedSongForPlaylist.id,
+      });
+      const playlist = playlists.find((p) => p.id === playlistId);
+      showToast(`${playlist?.name || '플레이리스트'}에 추가했습니다.`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      showToast(errorMessage || '플레이리스트에 추가하는 데 실패했습니다.');
+      throw error;
+    }
+  };
+
+  const loadVideoSync = async (songId: number) => {
+    setIsVideoReady(false);
+    setIsVideoLoading(false);
+    setVideoError(null);
+
+    try {
+      const data = await invoke<VideoSync | null>("get_video_sync", { songId });
+      if (!data?.videoPath) {
+        setVideoPath(null);
+        setSyncOffsetMs(0);
+        setMediaMode("cover");
+        return;
+      }
+
+      const existsOnDisk = await exists(data.videoPath);
+      if (!existsOnDisk) {
+        setVideoPath(null);
+        setSyncOffsetMs(0);
+        setMediaMode("cover");
+        setVideoError("연결된 동영상을 찾을 수 없습니다.");
+        return;
+      }
+
+      setVideoPath(data.videoPath);
+      setSyncOffsetMs(data.delayMs ?? 0);
+    } catch (error) {
+      console.error("Failed to load video sync:", error);
+      setVideoPath(null);
+      setSyncOffsetMs(0);
+      setMediaMode("cover");
+    }
+  };
+
+  useEffect(() => {
+    if (!currentSong) {
+      setVideoPath(null);
+      setSyncOffsetMs(0);
+      setMediaMode("cover");
+      setVideoError(null);
+      setIsVideoReady(false);
+      return;
+    }
+    loadVideoSync(currentSong.id);
+  }, [currentSong?.id]);
+
+  useEffect(() => {
+    const handleVideoSyncUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<{ songId: number }>).detail;
+      if (!detail || !currentSong) return;
+      if (detail.songId !== currentSong.id) return;
+      loadVideoSync(currentSong.id);
+    };
+    window.addEventListener("video-sync-updated", handleVideoSyncUpdate as EventListener);
+    return () => {
+      window.removeEventListener("video-sync-updated", handleVideoSyncUpdate as EventListener);
+    };
+  }, [currentSong?.id]);
+
+  useEffect(() => {
+    if (!videoRef.current) return;
+    if (!videoPath) return;
+    videoRef.current.muted = true;
+  }, [videoPath]);
+
+  useEffect(() => {
+    if (!videoRef.current || !isVideoReady || !videoPath) return;
+    if (mediaMode !== "video") return;
+
+    if (isPlaying) {
+      videoRef.current.play().catch(() => {});
+    } else {
+      videoRef.current.pause();
+    }
+  }, [isPlaying, mediaMode, isVideoReady, videoPath]);
+
+  useEffect(() => {
+    if (syncTimerRef.current) {
+      clearInterval(syncTimerRef.current);
+      syncTimerRef.current = null;
+    }
+    if (!videoRef.current || !isVideoReady || !videoPath) return;
+    if (mediaMode !== "video") return;
+
+    syncTimerRef.current = setInterval(() => {
+      const video = videoRef.current;
+      if (!video) return;
+      const targetTime = Math.max(0, currentTime + syncOffsetMs / 1000);
+      if (Number.isFinite(video.duration)) {
+        const maxTime = Math.max(0, video.duration - 0.05);
+        if (targetTime > maxTime) {
+          video.pause();
+          return;
+        }
+      }
+      if (Math.abs(video.currentTime - targetTime) > 0.25) {
+        video.currentTime = targetTime;
+      }
+    }, 250);
+
+    return () => {
+      if (syncTimerRef.current) {
+        clearInterval(syncTimerRef.current);
+        syncTimerRef.current = null;
+      }
+    };
+  }, [currentTime, syncOffsetMs, mediaMode, isVideoReady, videoPath]);
+
+  useEffect(() => {
+    if (!currentSong || !videoPath) return;
+    if (saveDelayTimerRef.current) {
+      clearTimeout(saveDelayTimerRef.current);
+    }
+    saveDelayTimerRef.current = setTimeout(() => {
+      invoke("update_video_sync_delay", {
+        songId: currentSong.id,
+        delayMs: syncOffsetMs,
+      }).catch((error) => {
+        console.error("Failed to save video sync delay:", error);
+      });
+    }, 300);
+
+    return () => {
+      if (saveDelayTimerRef.current) {
+        clearTimeout(saveDelayTimerRef.current);
+      }
+    };
+  }, [syncOffsetMs, currentSong?.id, videoPath]);
+
+
   return (
     <div className="h-full w-full flex overflow-hidden bg-bg-primary">
       {/* 좌측: 앨범 커버/영상 */}
-      <div className="flex-1 flex items-center justify-center bg-bg-primary h-full">
-        <div className="w-[60vh] max-w-[70%] max-h-[70%] aspect-square bg-hover rounded-lg flex items-center justify-center shadow-lg overflow-hidden">
-          {currentSong?.album_art_path ? (
+      <div className="flex-1 flex flex-col items-center justify-center bg-bg-primary h-full gap-4">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setMediaMode("cover")}
+            className={`h-8 px-3 rounded-md border text-xs transition-colors flex items-center gap-2 ${
+              mediaMode === "cover"
+                ? "bg-accent text-white border-transparent"
+                : "bg-bg-sidebar text-text-muted border-border hover:text-text-primary"
+            }`}
+          >
+            <ImageIcon className="w-3.5 h-3.5" />
+            커버
+          </button>
+          <button
+            type="button"
+            onClick={() => videoPath && setMediaMode("video")}
+            disabled={!videoPath}
+            className={`h-8 px-3 rounded-md border text-xs transition-colors flex items-center gap-2 ${
+              mediaMode === "video"
+                ? "bg-accent text-white border-transparent"
+                : "bg-bg-sidebar text-text-muted border-border"
+            } ${videoPath ? "hover:text-text-primary cursor-pointer" : "opacity-50 cursor-default"}`}
+          >
+            <Film className="w-3.5 h-3.5" />
+            동영상
+          </button>
+        </div>
+
+        <div className="w-[60vh] max-w-[70%] max-h-[70%] aspect-square bg-hover rounded-lg flex items-center justify-center shadow-lg overflow-hidden relative">
+          {mediaMode === "video" && videoSrc ? (
+            <>
+              <video
+                ref={videoRef}
+                src={videoSrc}
+                className="w-full h-full object-cover"
+                muted
+                playsInline
+                onLoadStart={() => {
+                  setIsVideoLoading(true);
+                  setVideoError(null);
+                }}
+                onLoadedMetadata={() => setIsVideoReady(true)}
+                onCanPlay={() => setIsVideoLoading(false)}
+                onWaiting={() => setIsVideoLoading(true)}
+                onPlaying={() => setIsVideoLoading(false)}
+                onError={() => {
+                  setIsVideoLoading(false);
+                  setVideoError("동영상 재생에 실패했습니다.");
+                  setMediaMode("cover");
+                }}
+              />
+              {(isVideoLoading || videoError) && (
+                <div className="absolute inset-0 bg-bg-primary/60 backdrop-blur-sm flex items-center justify-center text-sm text-text-muted">
+                  {videoError ?? "동영상 로딩 중..."}
+                </div>
+              )}
+            </>
+          ) : currentSong?.album_art_path ? (
             <AlbumArtImage
               filePath={currentSong.file_path}
               path={currentSong.album_art_path}
@@ -28,6 +361,50 @@ export const QueueView = () => {
             <Disc3 className="w-12 h-12 text-text-muted/70" />
           )}
         </div>
+
+        {videoPath && (
+          <div className="w-[60vh] max-w-[70%]">
+            <div className="flex items-center justify-between text-xs text-text-muted mb-2">
+              <span>싱크 조절</span>
+              <span>{(syncOffsetMs / 1000).toFixed(1)}s</span>
+            </div>
+            <input
+              type="range"
+              min={-10000}
+              max={10000}
+              step={100}
+              value={syncOffsetMs}
+              onChange={(e) => setSyncOffsetMs(Number(e.target.value))}
+              className="w-full slider"
+            />
+            <div className="flex items-center justify-between mt-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSyncOffsetMs((prev) => Math.max(-10000, prev - 500))}
+                  className="px-2 py-1 text-xs rounded border border-border text-text-muted hover:text-text-primary transition-colors"
+                >
+                  -0.5s
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSyncOffsetMs(0)}
+                  className="px-2 py-1 text-xs rounded border border-border text-text-muted hover:text-text-primary transition-colors"
+                >
+                  초기화
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSyncOffsetMs((prev) => Math.min(10000, prev + 500))}
+                  className="px-2 py-1 text-xs rounded border border-border text-text-muted hover:text-text-primary transition-colors"
+                >
+                  +0.5s
+                </button>
+              </div>
+              <div className="text-xs text-text-muted">범위: ±10.0s</div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 우측: 재생 대기열 목록 */}
@@ -48,9 +425,10 @@ export const QueueView = () => {
                   className={`flex items-center gap-3 px-3 py-2 rounded cursor-pointer transition-colors group ${
                     index === currentIndex
                       ? "bg-accent/20 text-text-primary"
-                      : "hover:bg-hover text-text-primary"
+                      : "text-text-primary"
                   }`}
                   onClick={() => handleSongClick(index)}
+                  onContextMenu={(e) => handleSongContextMenu(e, song, index)}
                 >
                   {/* 앨범 커버 썸네일 */}
                   <div className="w-12 h-12 bg-hover rounded flex items-center justify-center flex-shrink-0">
@@ -94,6 +472,49 @@ export const QueueView = () => {
           </div>
         </div>
       </div>
+
+      {contextMenu && (
+        <SongContextMenu
+          song={contextMenu.song}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onRemoveFromQueue={handleRemoveFromQueue}
+          onAddToPlaylist={handleAddToPlaylist}
+          onEditMetadata={handleEditMetadata}
+          onEditTags={handleEditTags}
+        />
+      )}
+
+      <PlaylistSelectModal
+        isOpen={isPlaylistSelectModalOpen}
+        onClose={() => {
+          setIsPlaylistSelectModalOpen(false);
+          setSelectedSongForPlaylist(null);
+        }}
+        onSelect={handlePlaylistSelect}
+        songTitle={selectedSongForPlaylist?.title || undefined}
+      />
+
+      <MetadataModal
+        isOpen={isMetadataModalOpen}
+        song={selectedSongForMetadata}
+        onSave={handleMetadataSave}
+        onClose={() => {
+          setIsMetadataModalOpen(false);
+          setSelectedSongForMetadata(null);
+        }}
+      />
+
+      <TagModal
+        isOpen={isTagModalOpen}
+        song={selectedSongForTags}
+        onSave={handleTagSave}
+        onClose={() => {
+          setIsTagModalOpen(false);
+          setSelectedSongForTags(null);
+        }}
+      />
     </div>
   );
 };
@@ -104,4 +525,3 @@ function formatDuration(seconds: number): string {
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
-
