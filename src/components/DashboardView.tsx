@@ -344,8 +344,8 @@ export const DashboardView = () => {
                       </ResponsiveContainer>
                     )}
                   </div>
-                  {!hasChartData && <EmptyOverlay className="rounded-md" />}
                 </div>
+                {!hasChartData && <EmptyOverlay className="rounded-lg" />}
               </div>
 
               <div className="xl:col-span-2 rounded-lg border border-border bg-bg-sidebar p-4 space-y-3 relative min-h-[140px] overflow-hidden">

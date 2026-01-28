@@ -25,7 +25,7 @@ type PlaybackFinishedPayload = {
 };
 
 function App() {
-  const { isOpen } = useQueueStore();
+  const { isOpen, setQueueOpen } = useQueueStore();
   const { loadSavedVolume } = usePlayerStore();
   const { folders, selectedFolderId, addFolder } = useFolderStore();
   const { playlists, selectedPlaylistId, createPlaylist } = usePlaylistStore();
@@ -52,6 +52,12 @@ function App() {
     selectFolder(null);
     selectPlaylist(null);
   }, [selectFolder, selectPlaylist]);
+
+  useEffect(() => {
+    if (activePrimary === "dashboard") {
+      setQueueOpen(false);
+    }
+  }, [activePrimary, setQueueOpen]);
 
   useEffect(() => {
     document.body.classList.toggle("window-rounded", !isMaximized);

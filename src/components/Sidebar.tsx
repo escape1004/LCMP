@@ -296,7 +296,10 @@ export const Sidebar = () => {
                         ? "bg-accent text-white"
                         : "hover:bg-hover text-text-primary"
                     }`}
-                    onClick={() => setDashboardSection("overall")}
+                    onClick={() => {
+                      setQueueOpen(false);
+                      setDashboardSection("overall");
+                    }}
                   >
                     <span className="flex-1 text-sm font-medium truncate">전체 통계</span>
                   </div>
@@ -306,7 +309,10 @@ export const Sidebar = () => {
                         ? "bg-accent text-white"
                         : "hover:bg-hover text-text-primary"
                     }`}
-                    onClick={() => setDashboardSection("artist")}
+                    onClick={() => {
+                      setQueueOpen(false);
+                      setDashboardSection("artist");
+                    }}
                   >
                     <span className="flex-1 text-sm font-medium truncate">아티스트 통계</span>
                   </div>
@@ -316,7 +322,10 @@ export const Sidebar = () => {
                         ? "bg-accent text-white"
                         : "hover:bg-hover text-text-primary"
                     }`}
-                    onClick={() => setDashboardSection("tag")}
+                    onClick={() => {
+                      setQueueOpen(false);
+                      setDashboardSection("tag");
+                    }}
                   >
                     <span className="flex-1 text-sm font-medium truncate">태그 통계</span>
                   </div>
