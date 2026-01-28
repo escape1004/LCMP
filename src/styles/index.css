@@ -279,4 +279,8 @@
   body.modal-open .titlebar-root {
     pointer-events: auto;
   }
+
+  body.window-rounded .modal-overlay {
+    border-radius: 0.5rem;
+  }
 }

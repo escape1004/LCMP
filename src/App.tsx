@@ -28,6 +28,10 @@ function App() {
   }, [loadSavedVolume]);
 
   useEffect(() => {
+    document.body.classList.toggle("window-rounded", !isMaximized);
+  }, [isMaximized]);
+
+  useEffect(() => {
     let unlistenResize: UnlistenFn | null = null;
     const syncMaximized = async () => {
       try {

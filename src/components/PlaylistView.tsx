@@ -783,8 +783,8 @@ export const PlaylistView = () => {
                       className={`text-left px-4 py-3 text-xs font-semibold text-text-muted uppercase tracking-wide select-none relative overflow-hidden text-ellipsis whitespace-nowrap transition-colors ${
                         isAlbumArt ? 'bg-bg-primary group-hover:bg-hover' : ''
                       } ${
-                        isSortable ? 'cursor-pointer hover:bg-hover' : 'cursor-default'
-                      }`}
+                        isSortable ? 'cursor-pointer' : 'cursor-default'
+                      } hover:bg-hover`}
                       onClick={() => {
                         if (isSortable) {
                           toggleSort(columnKey);

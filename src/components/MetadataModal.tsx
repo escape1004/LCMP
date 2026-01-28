@@ -167,7 +167,7 @@ export const MetadataModal = ({ isOpen, song, onClose, onSave }: MetadataModalPr
   if (!isOpen || !song) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="modal-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-bg-primary rounded-lg w-full max-w-2xl max-h-[90vh] overflow-hidden">
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h2 className="text-lg font-bold text-text-primary">메타데이터 수정</h2>
