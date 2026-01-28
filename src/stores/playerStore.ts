@@ -307,7 +307,14 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
       } catch (error) {
         console.error('Cleanup error:', error);
       }
-      set({ currentSong: null, isPlaying: false });
+      set({
+        currentSong: null,
+        isPlaying: false,
+        currentTime: 0,
+        duration: 0,
+        waveform: [],
+        isLoadingWaveform: false,
+      });
     },
 
     loadSavedVolume: async () => {
