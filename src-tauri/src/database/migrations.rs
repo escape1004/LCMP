@@ -125,6 +125,23 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         [],
     )?;
 
+    // queue_events 테이블 (대기열 추가 히스토리)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS queue_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_type TEXT NOT NULL,
+            source_id INTEGER NOT NULL,
+            song_count INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_queue_events_source ON queue_events(source_type, source_id)",
+        [],
+    )?;
+
     // 인덱스 생성
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_play_history_song_id ON play_history(song_id)",
@@ -148,4 +165,3 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
 
     Ok(())
 }
-

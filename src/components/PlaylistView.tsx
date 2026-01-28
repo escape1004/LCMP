@@ -598,6 +598,21 @@ export const PlaylistView = () => {
     addMultipleToQueue(songsWithWaveform);
     // 첫 곡 바로 재생
     await playSongAtIndex(0);
+
+    // 대기열 추가 이벤트 기록 (플레이리스트/폴더 기준)
+    if (selectedPlaylistId !== null) {
+      invoke('record_queue_event', {
+        sourceType: 'playlist',
+        sourceId: selectedPlaylistId,
+        songCount: songsWithWaveform.length,
+      }).catch(() => {});
+    } else if (selectedFolderId !== null) {
+      invoke('record_queue_event', {
+        sourceType: 'folder',
+        sourceId: selectedFolderId,
+        songCount: songsWithWaveform.length,
+      }).catch(() => {});
+    }
   };
 
   const totalRows = sortedSongs.length;

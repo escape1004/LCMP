@@ -17,6 +17,7 @@ use commands::{
     get_table_columns, set_table_columns,
     get_table_column_widths, set_table_column_widths,
     get_audio_format_info,
+    get_dashboard_stats, record_queue_event,
 };
 
 fn main() {
@@ -72,6 +73,8 @@ fn main() {
             get_table_column_widths,
             set_table_column_widths,
             get_audio_format_info,
+            get_dashboard_stats,
+            record_queue_event,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

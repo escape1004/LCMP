@@ -1,0 +1,510 @@
+﻿import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChevronDown,
+  Clock,
+  Folder,
+  Music4,
+  Tag,
+  User,
+  Flame,
+} from "lucide-react";
+import { invoke } from "@tauri-apps/api/tauri";
+import { useDashboardStore } from "../stores/dashboardStore";
+
+const StatCard = ({
+  title,
+  value,
+  helper,
+  icon: Icon,
+}: {
+  title: string;
+  value: string;
+  helper?: string;
+  icon: React.ComponentType<{ className?: string }>;
+}) => (
+  <div className="rounded-lg border border-border bg-bg-sidebar p-4">
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-xs text-text-muted">{title}</p>
+        <p className="text-2xl font-semibold text-text-primary mt-2">{value}</p>
+        {helper && <p className="text-xs text-text-muted mt-1">{helper}</p>}
+      </div>
+      <div className="h-10 w-10 rounded-lg bg-bg-primary border border-border flex items-center justify-center">
+        <Icon className="w-5 h-5 text-text-muted" />
+      </div>
+    </div>
+  </div>
+);
+
+const ListRow = ({ label, meta }: { label: string; meta: string }) => (
+  <div className="flex items-center justify-between rounded-md border border-border bg-bg-primary px-3 py-2">
+    <span className="text-sm text-text-primary truncate">{label}</span>
+    <span className="text-xs text-text-muted">{meta}</span>
+  </div>
+);
+
+const TagChip = ({ label, count }: { label: string; count: string }) => (
+  <div className="flex items-center gap-2 rounded-full bg-bg-primary border border-border px-3 py-1 text-xs text-text-primary">
+    <span className="truncate">{label}</span>
+    <span className="text-text-muted">{count}</span>
+  </div>
+);
+
+const EmptyState = ({ label }: { label: string }) => (
+  <div className="text-sm text-text-muted py-6 text-center">{label}</div>
+);
+
+type DashboardDateCount = { label: string; count: number };
+
+type DashboardSongStat = {
+  id: number;
+  title: string | null;
+  artist: string | null;
+  file_path: string;
+  play_count: number;
+};
+
+type DashboardRecentSong = {
+  id: number;
+  title: string | null;
+  artist: string | null;
+  created_at: string;
+};
+
+type DashboardNamedCount = {
+  name: string;
+  count: number;
+};
+
+type DashboardTagUsage = {
+  name: string;
+  song_count: number;
+};
+
+type DashboardPlaylistCount = {
+  id: number;
+  name: string;
+  count: number;
+};
+
+type DashboardFolderCount = {
+  id: number;
+  name: string;
+  count: number;
+};
+
+type DashboardStats = {
+  total_song_count: number;
+  total_duration_seconds: number;
+  total_size_bytes: number;
+  date_counts: DashboardDateCount[];
+  top_songs: DashboardSongStat[];
+  recent_songs: DashboardRecentSong[];
+  top_artists: DashboardNamedCount[];
+  top_tags: DashboardNamedCount[];
+  top_playlists: DashboardPlaylistCount[];
+  top_folders: DashboardFolderCount[];
+  artist_most_played: DashboardNamedCount | null;
+  artist_least_played: DashboardNamedCount | null;
+  tag_most_played: DashboardNamedCount | null;
+  tag_least_played: DashboardNamedCount | null;
+  tag_most_used: DashboardNamedCount | null;
+  tag_least_used: DashboardNamedCount | null;
+  tag_usage: DashboardTagUsage[];
+};
+
+type DateUnit = "day" | "month" | "year";
+
+const formatDuration = (seconds: number) => {
+  if (!seconds || seconds <= 0) return "0:00";
+  const total = Math.floor(seconds);
+  const hours = Math.floor(total / 3600);
+  const mins = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  if (hours > 0) {
+    return `${hours}시간 ${mins}분`;
+  }
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+};
+
+const formatFileSize = (bytes: number) => {
+  if (!bytes || bytes <= 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const value = bytes / Math.pow(k, i);
+  return `${value.toFixed(1)} ${sizes[i]}`;
+};
+
+const formatCount = (count: number, suffix: string) => `${count.toLocaleString("ko-KR")}${suffix}`;
+
+const getSongLabel = (song: { title: string | null; file_path: string }) => {
+  if (song.title && song.title.trim()) return song.title;
+  const name = song.file_path.split(/[/\\]/).pop();
+  return name || "제목 없음";
+};
+
+export const DashboardView = () => {
+  const { section } = useDashboardStore();
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [dateUnit, setDateUnit] = useState<DateUnit>("month");
+  const [isDateUnitOpen, setIsDateUnitOpen] = useState(false);
+  const dateUnitRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setIsLoading(true);
+    invoke<DashboardStats>("get_dashboard_stats", { dateUnit })
+      .then((data) => setStats(data))
+      .catch((error) => {
+        console.error("Failed to load dashboard stats:", error);
+        setStats(null);
+      })
+      .finally(() => setIsLoading(false));
+  }, [dateUnit]);
+
+  useEffect(() => {
+    if (!isDateUnitOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dateUnitRef.current && !dateUnitRef.current.contains(event.target as Node)) {
+        setIsDateUnitOpen(false);
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsDateUnitOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isDateUnitOpen]);
+
+  const chartPoints = useMemo(() => stats?.date_counts ?? [], [stats]);
+  const maxChartCount = useMemo(() => {
+    if (!chartPoints.length) return 0;
+    return Math.max(...chartPoints.map((point) => point.count));
+  }, [chartPoints]);
+
+  const topSongs = stats?.top_songs ?? [];
+  const recentSongs = stats?.recent_songs ?? [];
+  const topArtists = stats?.top_artists ?? [];
+  const topTags = stats?.top_tags ?? [];
+  const topPlaylists = stats?.top_playlists ?? [];
+  const topFolders = stats?.top_folders ?? [];
+  const tagUsage = stats?.tag_usage ?? [];
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0 bg-bg-primary">
+      <div className="px-6 py-4 border-b border-border bg-bg-primary">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold text-text-primary">대시보드</h2>
+            <p className="text-sm text-text-muted mt-1">
+              전체 보관함 요약과 재생 패턴을 한눈에 확인하세요.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-text-muted" />
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-8">
+        {section === "overall" && (
+          <section className="space-y-5">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <StatCard
+                title="등록된 노래 개수"
+                value={`${(stats?.total_song_count ?? 0).toLocaleString("ko-KR")} 곡`}
+                icon={Music4}
+              />
+              <StatCard
+                title="전체 노래 용량"
+                value={formatFileSize(stats?.total_size_bytes ?? 0)}
+                icon={Folder}
+              />
+              <StatCard
+                title="전체 플레이타임"
+                value={formatDuration(stats?.total_duration_seconds ?? 0)}
+                icon={Clock}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-5 gap-3">
+              <div className="xl:col-span-3 rounded-lg border border-border bg-bg-sidebar p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Flame className="w-4 h-4 text-text-muted" />
+                    <h4 className="text-sm font-semibold text-text-primary">날짜별 노래 재생수</h4>
+                  </div>
+                  <div ref={dateUnitRef} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsDateUnitOpen((prev) => !prev)}
+                      className="flex items-center gap-2 text-xs text-white bg-bg-primary border border-border rounded-md px-2 py-1"
+                    >
+                      {dateUnit === "day" ? "일별" : dateUnit === "month" ? "월별" : "연별"}
+                      <ChevronDown className="w-3 h-3" />
+                    </button>
+                    {isDateUnitOpen && (
+                      <div className="absolute right-0 mt-2 w-24 rounded-md border border-border bg-bg-sidebar shadow-lg z-20 overflow-hidden">
+                        {([
+                          { label: "일별", value: "day" },
+                          { label: "월별", value: "month" },
+                          { label: "연별", value: "year" },
+                        ] as { label: string; value: DateUnit }[]).map((item) => (
+                          <button
+                            key={item.value}
+                            type="button"
+                            onClick={() => {
+                              setDateUnit(item.value);
+                              setIsDateUnitOpen(false);
+                            }}
+                            className={`w-full text-left px-3 py-2 text-xs transition-colors ${
+                              dateUnit === item.value
+                                ? "bg-accent text-white"
+                                : "text-text-primary hover:bg-hover"
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-4 h-52 rounded-md bg-bg-primary border border-border flex items-end gap-2 px-4 pb-4">
+                  {chartPoints.length > 0 ? (
+                    chartPoints.map((point) => {
+                      const height = maxChartCount > 0 ? Math.max(6, (point.count / maxChartCount) * 100) : 6;
+                      return (
+                        <div key={point.label} className="flex-1 flex flex-col items-center gap-2">
+                          <div
+                            className="w-full rounded-full bg-[#5865f2]/70"
+                            style={{ height: `${height}%` }}
+                          />
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-sm text-text-muted w-full h-full flex items-center justify-center text-center">
+                      재생 데이터가 없습니다.
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-text-muted mt-3">
+                  {chartPoints.length > 0 ? "최근 재생 추이를 표시합니다." : "차트 데이터가 없습니다."}
+                </p>
+              </div>
+
+              <div className="xl:col-span-2 rounded-lg border border-border bg-bg-sidebar p-4 space-y-3">
+                <h4 className="text-sm font-semibold text-text-primary">최근 등록한 노래</h4>
+                {recentSongs.length > 0 ? (
+                  <div className="space-y-2">
+                    {recentSongs.map((song) => (
+                      <ListRow
+                        key={song.id}
+                        label={`${song.artist || "아티스트 없음"} / ${song.title || "제목 없음"}`}
+                        meta={new Date(song.created_at).toLocaleDateString("ko-KR")}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState label="최근 등록된 노래가 없습니다." />
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
+              <div className="rounded-lg border border-border bg-bg-sidebar p-4 space-y-3">
+                <h4 className="text-sm font-semibold text-text-primary">자주 듣는 노래</h4>
+                {topSongs.length > 0 ? (
+                  <div className="space-y-2">
+                    {topSongs.map((song) => (
+                      <ListRow
+                        key={song.id}
+                        label={getSongLabel(song)}
+                        meta={`${song.artist || "아티스트 없음"} · ${formatCount(song.play_count, "회")}`}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState label="재생 기록이 없습니다." />
+                )}
+              </div>
+              <div className="rounded-lg border border-border bg-bg-sidebar p-4 space-y-3">
+                <h4 className="text-sm font-semibold text-text-primary">자주 듣는 플레이리스트</h4>
+                {topPlaylists.length > 0 ? (
+                  <div className="space-y-2">
+                    {topPlaylists.map((playlist) => (
+                      <ListRow
+                        key={playlist.id}
+                        label={playlist.name}
+                        meta={formatCount(playlist.count, "회")}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState label="플레이리스트 기록이 없습니다." />
+                )}
+              </div>
+              <div className="rounded-lg border border-border bg-bg-sidebar p-4 space-y-3">
+                <h4 className="text-sm font-semibold text-text-primary">자주 듣는 폴더</h4>
+                {topFolders.length > 0 ? (
+                  <div className="space-y-2">
+                    {topFolders.map((folder) => (
+                      <ListRow key={folder.id} label={folder.name} meta={formatCount(folder.count, "회")} />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState label="폴더 기록이 없습니다." />
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {section === "artist" && (
+          <section className="space-y-5">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div className="rounded-lg border border-border bg-bg-sidebar p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-text-muted uppercase tracking-[0.2em]">가장 많이 들은 아티스트</p>
+                  <p className="text-lg font-semibold text-text-primary mt-2">
+                    {stats?.artist_most_played?.name ?? "-"}
+                  </p>
+                  <p className="text-xs text-text-muted mt-1">
+                    {stats?.artist_most_played
+                      ? formatCount(stats.artist_most_played.count, "회 재생")
+                      : "재생 기록이 없습니다."}
+                  </p>
+                </div>
+                <div className="w-10 h-10 rounded-lg bg-bg-primary border border-border flex items-center justify-center">
+                  <User className="w-5 h-5 text-text-muted" />
+                </div>
+              </div>
+              <div className="rounded-lg border border-border bg-bg-sidebar p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-text-muted uppercase tracking-[0.2em]">가장 적게 들은 아티스트</p>
+                  <p className="text-lg font-semibold text-text-primary mt-2">
+                    {stats?.artist_least_played?.name ?? "-"}
+                  </p>
+                  <p className="text-xs text-text-muted mt-1">
+                    {stats?.artist_least_played
+                      ? formatCount(stats.artist_least_played.count, "회 재생")
+                      : "재생 기록이 없습니다."}
+                  </p>
+                </div>
+                <div className="w-10 h-10 rounded-lg bg-bg-primary border border-border flex items-center justify-center">
+                  <User className="w-5 h-5 text-text-muted" />
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border bg-bg-sidebar p-4 space-y-3">
+              <h4 className="text-sm font-semibold text-text-primary">자주 듣는 아티스트</h4>
+              {topArtists.length > 0 ? (
+                <div className="space-y-2">
+                  {topArtists.map((artist) => (
+                    <ListRow key={artist.name} label={artist.name} meta={formatCount(artist.count, "회")} />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState label="재생 기록이 없습니다." />
+              )}
+            </div>
+          </section>
+        )}
+
+        {section === "tag" && (
+          <section className="space-y-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+              <div className="rounded-lg border border-border bg-bg-sidebar p-4">
+                <p className="text-xs text-text-muted uppercase tracking-[0.2em]">많이 들은 태그</p>
+                <p className="text-lg font-semibold text-text-primary mt-2">
+                  {stats?.tag_most_played?.name ?? "-"}
+                </p>
+                <p className="text-xs text-text-muted mt-1">
+                  {stats?.tag_most_played
+                    ? formatCount(stats.tag_most_played.count, "회 재생")
+                    : "재생 기록이 없습니다."}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border bg-bg-sidebar p-4">
+                <p className="text-xs text-text-muted uppercase tracking-[0.2em]">적게 들은 태그</p>
+                <p className="text-lg font-semibold text-text-primary mt-2">
+                  {stats?.tag_least_played?.name ?? "-"}
+                </p>
+                <p className="text-xs text-text-muted mt-1">
+                  {stats?.tag_least_played
+                    ? formatCount(stats.tag_least_played.count, "회 재생")
+                    : "재생 기록이 없습니다."}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border bg-bg-sidebar p-4">
+                <p className="text-xs text-text-muted uppercase tracking-[0.2em]">가장 많은 태그</p>
+                <p className="text-lg font-semibold text-text-primary mt-2">
+                  {stats?.tag_most_used?.name ?? "-"}
+                </p>
+                <p className="text-xs text-text-muted mt-1">
+                  {stats?.tag_most_used
+                    ? `${formatCount(stats.tag_most_used.count, "곡")} 등록됨`
+                    : "태그가 없습니다."}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border bg-bg-sidebar p-4">
+                <p className="text-xs text-text-muted uppercase tracking-[0.2em]">가장 적은 태그</p>
+                <p className="text-lg font-semibold text-text-primary mt-2">
+                  {stats?.tag_least_used?.name ?? "-"}
+                </p>
+                <p className="text-xs text-text-muted mt-1">
+                  {stats?.tag_least_used
+                    ? `${formatCount(stats.tag_least_used.count, "곡")} 등록됨`
+                    : "태그가 없습니다."}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border bg-bg-sidebar p-4 space-y-3">
+              <h4 className="text-sm font-semibold text-text-primary">자주 듣는 태그</h4>
+              {topTags.length > 0 ? (
+                <div className="space-y-2">
+                  {topTags.map((tag) => (
+                    <ListRow key={tag.name} label={tag.name} meta={formatCount(tag.count, "회")} />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState label="등록된 태그가 없습니다." />
+              )}
+            </div>
+
+            <div className="rounded-lg border border-border bg-bg-sidebar p-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-text-primary">현재 등록된 모든 태그</h4>
+                <div className="flex items-center gap-2 text-xs text-text-muted">
+                  <Tag className="w-4 h-4" />
+                  {formatCount(tagUsage.length, "개")}
+                </div>
+              </div>
+              {tagUsage.length > 0 ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {tagUsage.map((tag) => (
+                    <TagChip key={tag.name} label={tag.name} count={`${tag.song_count}곡`} />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState label="태그 데이터가 없습니다." />
+              )}
+            </div>
+          </section>
+        )}
+
+        {isLoading && (
+          <div className="text-xs text-text-muted text-center">통계를 불러오는 중...</div>
+        )}
+      </div>
+    </div>
+  );
+};

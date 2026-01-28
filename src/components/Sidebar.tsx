@@ -4,6 +4,7 @@ import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea
 import { useFolderStore } from "../stores/folderStore";
 import { usePlaylistStore } from "../stores/playlistStore";
 import { useQueueStore } from "../stores/queueStore";
+import { useDashboardStore } from "../stores/dashboardStore";
 import { FolderModal } from "./FolderModal";
 import { PlaylistModal } from "./PlaylistModal";
 import { SidebarContextMenu } from "./SidebarContextMenu";
@@ -37,6 +38,7 @@ export const Sidebar = () => {
   } = usePlaylistStore();
 
   const { setQueueOpen } = useQueueStore();
+  const { section: dashboardSection, setSection: setDashboardSection } = useDashboardStore();
 
   const [activePrimary, setActivePrimary] = useState<PrimaryMenu>("dashboard");
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
@@ -81,6 +83,7 @@ export const Sidebar = () => {
     selectPlaylist(null);
     setQueueOpen(false);
     setActivePrimary("dashboard");
+    setDashboardSection("overall");
   };
 
   const handleFoldersClick = () => {
@@ -213,11 +216,7 @@ export const Sidebar = () => {
   };
 
   return (
-    <div
-      className={`flex h-full bg-bg-sidebar overflow-visible ${
-        activePrimary === "dashboard" ? "w-14" : "w-[280px]"
-      }`}
-    >
+    <div className="flex h-full bg-bg-sidebar overflow-visible w-[280px]">
       <div className="w-14 bg-[#2B2D31] flex flex-col items-center pt-0 pb-3 gap-2 relative overflow-visible border-r border-border">
         <div className="relative group">
           <button
@@ -269,22 +268,64 @@ export const Sidebar = () => {
         </div>
       </div>
 
-      {activePrimary !== "dashboard" && (
-        <div className="w-56 bg-bg-sidebar flex flex-col h-full border-r border-border">
+      <div className="w-56 bg-bg-sidebar flex flex-col h-full border-r border-border">
+        {activePrimary === "dashboard" && (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="h-11 px-3 flex items-center justify-between flex-shrink-0 border-b border-border">
+              <h2 className="text-sm font-semibold text-white uppercase tracking-wide">
+                대시보드
+              </h2>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <div className="px-1 py-1">
+                <div className="space-y-1">
+                  <div
+                    className={`flex items-center justify-between px-3 py-2 rounded cursor-pointer transition-colors group ${
+                      dashboardSection === "overall"
+                        ? "bg-accent text-white"
+                        : "hover:bg-hover text-text-primary"
+                    }`}
+                    onClick={() => setDashboardSection("overall")}
+                  >
+                    <span className="flex-1 text-sm font-medium truncate">전체 통계</span>
+                  </div>
+                  <div
+                    className={`flex items-center justify-between px-3 py-2 rounded cursor-pointer transition-colors group ${
+                      dashboardSection === "artist"
+                        ? "bg-accent text-white"
+                        : "hover:bg-hover text-text-primary"
+                    }`}
+                    onClick={() => setDashboardSection("artist")}
+                  >
+                    <span className="flex-1 text-sm font-medium truncate">아티스트 통계</span>
+                  </div>
+                  <div
+                    className={`flex items-center justify-between px-3 py-2 rounded cursor-pointer transition-colors group ${
+                      dashboardSection === "tag"
+                        ? "bg-accent text-white"
+                        : "hover:bg-hover text-text-primary"
+                    }`}
+                    onClick={() => setDashboardSection("tag")}
+                  >
+                    <span className="flex-1 text-sm font-medium truncate">태그 통계</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
           {activePrimary === "folders" && (
             <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="px-3 pt-3 pb-3 flex-shrink-0 border-b border-border">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide">
-                    폴더
-                  </h2>
-                  <button
-                    onClick={handleAddFolder}
-                    className="p-1 hover:bg-hover rounded transition-colors"
-                  >
-                    <Plus size={14} className="text-text-muted" />
-                  </button>
-                </div>
+              <div className="h-11 px-3 flex items-center justify-between flex-shrink-0 border-b border-border">
+                <h2 className="text-sm font-semibold text-white uppercase tracking-wide">
+                  폴더
+                </h2>
+                <button
+                  onClick={handleAddFolder}
+                  className="p-1 hover:bg-hover rounded transition-colors text-white"
+                >
+                  <Plus size={14} className="text-white" />
+                </button>
               </div>
               <div className="flex-1 overflow-y-auto">
                 <div className="px-1 py-1">
@@ -339,18 +380,16 @@ export const Sidebar = () => {
 
           {activePrimary === "playlists" && (
             <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="px-3 pt-3 pb-3 flex-shrink-0 border-b border-border">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide">
-                    플레이리스트
-                  </h2>
-                  <button
-                    onClick={handleCreatePlaylist}
-                    className="p-1 hover:bg-hover rounded transition-colors"
-                  >
-                    <Plus size={14} className="text-text-muted" />
-                  </button>
-                </div>
+              <div className="h-11 px-3 flex items-center justify-between flex-shrink-0 border-b border-border">
+                <h2 className="text-sm font-semibold text-white uppercase tracking-wide">
+                  플레이리스트
+                </h2>
+                <button
+                  onClick={handleCreatePlaylist}
+                  className="p-1 hover:bg-hover rounded transition-colors text-white"
+                >
+                  <Plus size={14} className="text-white" />
+                </button>
               </div>
               <div className="flex-1 overflow-y-auto">
                 <div className="px-1 py-1">
@@ -405,7 +444,6 @@ export const Sidebar = () => {
             </div>
           )}
         </div>
-      )}
 
       <FolderModal
         isOpen={isFolderModalOpen}

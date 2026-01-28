@@ -3,6 +3,7 @@ import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { appWindow } from "@tauri-apps/api/window";
 import { Sidebar } from "./components/Sidebar";
 import { PlaylistView } from "./components/PlaylistView";
+import { DashboardView } from "./components/DashboardView";
 import { PlayerControls } from "./components/PlayerControls";
 import { QueueView } from "./components/QueueView";
 import { WaveformWidget } from "./components/WaveformWidget";
@@ -154,7 +155,7 @@ function App() {
         <div className="flex-1 flex flex-col overflow-hidden relative">
           <div className="pointer-events-none absolute top-0 left-0 right-0 h-px bg-border" />
           {selectedFolderId === null && selectedPlaylistId === null ? (
-            <div className="flex-1 bg-bg-primary" />
+            <DashboardView />
           ) : (
             <PlaylistView />
           )}

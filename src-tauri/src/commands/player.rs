@@ -553,6 +553,23 @@ pub async fn play_audio(app_handle: tauri::AppHandle, file_path: String, volume:
     }));
     
     *PLAYER_STATE.lock().map_err(|e| format!("Lock error: {}", e))? = Some(state.clone());
+
+    // 재생 시작 기록 (seek 기반 재생은 제외)
+    if seek_time.is_none() {
+        if let Ok(conn) = get_connection() {
+            let song_id = conn.query_row(
+                "SELECT id FROM songs WHERE file_path = ?1",
+                [&file_path],
+                |row| row.get::<_, i64>(0),
+            );
+            if let Ok(song_id) = song_id {
+                let _ = conn.execute(
+                    "INSERT INTO play_history (song_id, play_duration) VALUES (?1, NULL)",
+                    [song_id],
+                );
+            }
+        }
+    }
     
     // ✅ 재생 스레드 시작
     let app_handle_clone = app_handle.clone();
