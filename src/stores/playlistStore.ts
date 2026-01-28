@@ -83,7 +83,10 @@ export const usePlaylistStore = create<PlaylistStore>((set) => ({
         playlists: state.playlists.filter((p) => p.id !== playlistId),
         selectedPlaylistId:
           state.selectedPlaylistId === playlistId
-            ? null
+            ? (() => {
+                const remaining = state.playlists.filter((p) => p.id !== playlistId);
+                return remaining.length > 0 ? remaining[0].id : null;
+              })()
             : state.selectedPlaylistId,
       }));
     } catch (error) {
@@ -96,4 +99,3 @@ export const usePlaylistStore = create<PlaylistStore>((set) => ({
     set({ selectedPlaylistId: playlistId });
   },
 }));
-

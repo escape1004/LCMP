@@ -10,10 +10,15 @@ import { WaveformWidget } from "./components/WaveformWidget";
 import { ToastContainer } from "./components/ui/toast";
 import { TitleBar } from "./components/TitleBar";
 import { SettingsModal } from "./components/SettingsModal";
+import { FolderModal } from "./components/FolderModal";
+import { PlaylistModal } from "./components/PlaylistModal";
 import { useQueueStore } from "./stores/queueStore";
 import { usePlayerStore } from "./stores/playerStore";
 import { useFolderStore } from "./stores/folderStore";
 import { usePlaylistStore } from "./stores/playlistStore";
+import { useViewStore } from "./stores/viewStore";
+import { Button } from "./components/ui/button";
+import { FolderPlus, ListMusic } from "lucide-react";
 
 type PlaybackFinishedPayload = {
   file_path: string;
@@ -22,12 +27,21 @@ type PlaybackFinishedPayload = {
 function App() {
   const { isOpen } = useQueueStore();
   const { loadSavedVolume } = usePlayerStore();
-  const selectedFolderId = useFolderStore((state) => state.selectedFolderId);
-  const selectedPlaylistId = usePlaylistStore((state) => state.selectedPlaylistId);
+  const { folders, selectedFolderId, addFolder } = useFolderStore();
+  const { playlists, selectedPlaylistId, createPlaylist } = usePlaylistStore();
+  const { activePrimary } = useViewStore();
   const selectFolder = useFolderStore((state) => state.selectFolder);
   const selectPlaylist = usePlaylistStore((state) => state.selectPlaylist);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isEmptyFolderModalOpen, setIsEmptyFolderModalOpen] = useState(false);
+  const [isEmptyPlaylistModalOpen, setIsEmptyPlaylistModalOpen] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
+  const isLibraryEmpty = folders.length === 0 && playlists.length === 0;
+  const showEmptyForFolders = activePrimary === "folders" && folders.length === 0;
+  const showEmptyForPlaylists = activePrimary === "playlists" && playlists.length === 0;
+  const showFolderEmptyMessage = showEmptyForFolders;
+  const showPlaylistEmptyMessage = showEmptyForPlaylists;
+  const showEmptyState = showEmptyForFolders || showEmptyForPlaylists;
 
   // 앱 시작 시 저장된 볼륨 불러오기
   useEffect(() => {
@@ -154,7 +168,91 @@ function App() {
         {/* Main Content */}
         <div className="flex-1 flex flex-col overflow-hidden relative">
           <div className="pointer-events-none absolute top-0 left-0 right-0 h-px bg-border" />
-          {selectedFolderId === null && selectedPlaylistId === null ? (
+          {showEmptyState ? (
+            <div className="flex-1 flex items-center justify-center bg-bg-primary">
+              <div className="flex flex-col items-center gap-4 text-center">
+                <div className="w-16 h-16 rounded-2xl bg-bg-sidebar border border-border flex items-center justify-center">
+                  {showEmptyForPlaylists && !isLibraryEmpty ? (
+                    <ListMusic className="w-8 h-8 text-text-muted" />
+                  ) : (
+                    <FolderPlus className="w-8 h-8 text-text-muted" />
+                  )}
+                </div>
+                <div className="space-y-1">
+                  {showPlaylistEmptyMessage ? (
+                    <>
+                      <p className="text-lg font-semibold text-text-primary">
+                        플레이리스트가 비어 있습니다.
+                      </p>
+                      <p className="text-sm text-text-muted">
+                        새 플레이리스트를 만들어 음악을 정리해보세요.
+                      </p>
+                    </>
+                  ) : showFolderEmptyMessage ? (
+                    <>
+                      <p className="text-lg font-semibold text-text-primary">
+                        폴더가 비어 있습니다.
+                      </p>
+                      <p className="text-sm text-text-muted">
+                        로컬 폴더를 추가해 음악을 불러오세요.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-lg font-semibold text-text-primary">
+                        폴더나 플레이리스트를 추가해보세요.
+                      </p>
+                      <p className="text-sm text-text-muted">
+                        로컬 폴더를 추가하거나 플레이리스트를 만들어 음악을 관리할 수 있습니다.
+                      </p>
+                    </>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {showPlaylistEmptyMessage ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => setIsEmptyPlaylistModalOpen(true)}
+                      className="bg-accent hover:bg-accent/90"
+                    >
+                      플레이리스트 추가
+                    </Button>
+                  ) : showFolderEmptyMessage ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => setIsEmptyFolderModalOpen(true)}
+                      className="bg-accent hover:bg-accent/90"
+                    >
+                      폴더 추가
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => setIsEmptyFolderModalOpen(true)}
+                        className="bg-accent hover:bg-accent/90"
+                      >
+                        폴더 추가
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setIsEmptyPlaylistModalOpen(true)}
+                        className="border-border"
+                      >
+                        <ListMusic className="w-4 h-4 mr-1" />
+                        플레이리스트 추가
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : selectedFolderId === null && selectedPlaylistId === null ? (
             <DashboardView />
           ) : (
             <PlaylistView />
@@ -178,6 +276,21 @@ function App() {
       {/* Toast Container */}
       <ToastContainer />
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
+      <FolderModal
+        isOpen={isEmptyFolderModalOpen}
+        onClose={() => setIsEmptyFolderModalOpen(false)}
+        onConfirm={async (path, name) => {
+          await addFolder(path, name);
+        }}
+      />
+      <PlaylistModal
+        isOpen={isEmptyPlaylistModalOpen}
+        onClose={() => setIsEmptyPlaylistModalOpen(false)}
+        onConfirm={async (name, description, isDynamic) => {
+          await createPlaylist(name, description, isDynamic);
+        }}
+      />
     </div>
   );
 }

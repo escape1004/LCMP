@@ -5,6 +5,7 @@ import { useFolderStore } from "../stores/folderStore";
 import { usePlaylistStore } from "../stores/playlistStore";
 import { useQueueStore } from "../stores/queueStore";
 import { useDashboardStore } from "../stores/dashboardStore";
+import { useViewStore } from "../stores/viewStore";
 import { FolderModal } from "./FolderModal";
 import { PlaylistModal } from "./PlaylistModal";
 import { SidebarContextMenu } from "./SidebarContextMenu";
@@ -40,7 +41,7 @@ export const Sidebar = () => {
   const { setQueueOpen } = useQueueStore();
   const { section: dashboardSection, setSection: setDashboardSection } = useDashboardStore();
 
-  const [activePrimary, setActivePrimary] = useState<PrimaryMenu>("dashboard");
+  const { activePrimary, setActivePrimary } = useViewStore();
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
   const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState(false);
   const [editingFolder, setEditingFolder] = useState<number | null>(null);
@@ -71,12 +72,22 @@ export const Sidebar = () => {
   useEffect(() => {
     if (selectedFolderId !== null) {
       setActivePrimary("folders");
-    } else if (selectedPlaylistId !== null) {
-      setActivePrimary("playlists");
-    } else {
-      setActivePrimary("dashboard");
+      return;
     }
-  }, [selectedFolderId, selectedPlaylistId]);
+    if (selectedPlaylistId !== null) {
+      setActivePrimary("playlists");
+      return;
+    }
+    if (activePrimary === "folders" && folders.length === 0) {
+      setActivePrimary("folders");
+      return;
+    }
+    if (activePrimary === "playlists" && playlists.length === 0) {
+      setActivePrimary("playlists");
+      return;
+    }
+    setActivePrimary("dashboard");
+  }, [selectedFolderId, selectedPlaylistId, folders.length, playlists.length, activePrimary, setActivePrimary]);
 
   const handleDashboardClick = () => {
     selectFolder(null);

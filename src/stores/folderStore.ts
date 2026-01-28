@@ -75,7 +75,12 @@ export const useFolderStore = create<FolderStore>((set) => ({
       set((state) => ({
         folders: state.folders.filter((f) => f.id !== folderId),
         selectedFolderId:
-          state.selectedFolderId === folderId ? null : state.selectedFolderId,
+          state.selectedFolderId === folderId
+            ? (() => {
+                const remaining = state.folders.filter((f) => f.id !== folderId);
+                return remaining.length > 0 ? remaining[0].id : null;
+              })()
+            : state.selectedFolderId,
       }));
     } catch (error) {
       console.error('Failed to remove folder:', error);
@@ -87,4 +92,3 @@ export const useFolderStore = create<FolderStore>((set) => ({
     set({ selectedFolderId: folderId });
   },
 }));
-

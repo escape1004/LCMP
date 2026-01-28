@@ -329,26 +329,23 @@ export const DashboardView = () => {
                     )}
                   </div>
                 </div>
-                {hasChartData ? (
-                  <div className="mt-4 h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={chartPoints} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="label" stroke="#9CA3AF" fontSize={12} padding={{ left: 0, right: 0 }} />
-                        <YAxis stroke="#9CA3AF" fontSize={12} width={40} tickMargin={6} />
-                        <Tooltip content={<CustomTooltip />} />
-                        <Line type="monotone" dataKey="count" stroke="#5865F2" strokeWidth={2} />
-                      </LineChart>
-                    </ResponsiveContainer>
+                <div className="mt-4 h-[300px] relative">
+                  <div className="absolute inset-0 rounded-md bg-bg-sidebar border border-border" />
+                  <div className="relative h-full">
+                    {hasChartData && (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={chartPoints} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                          <XAxis dataKey="label" stroke="#9CA3AF" fontSize={12} padding={{ left: 0, right: 0 }} />
+                          <YAxis stroke="#9CA3AF" fontSize={12} width={40} tickMargin={6} />
+                          <Tooltip content={<CustomTooltip />} />
+                          <Line type="monotone" dataKey="count" stroke="#5865F2" strokeWidth={2} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
                   </div>
-                ) : (
-                  <div className="mt-4 h-[300px] rounded-md bg-bg-primary border border-border flex items-center justify-center text-text-muted">
-                    <div className="flex items-center gap-1.5">
-                      <AlertCircle className="w-3.5 h-3.5 text-text-muted" />
-                      데이터 없음
-                    </div>
-                  </div>
-                )}
+                  {!hasChartData && <EmptyOverlay className="rounded-md" />}
+                </div>
               </div>
 
               <div className="xl:col-span-2 rounded-lg border border-border bg-bg-sidebar p-4 space-y-3 relative min-h-[140px] overflow-hidden">
