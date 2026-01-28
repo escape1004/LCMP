@@ -15,23 +15,19 @@ export const QueueView = () => {
     <div className="h-full w-full flex overflow-hidden bg-bg-primary">
       {/* 좌측: 앨범 커버/영상 */}
       <div className="flex-1 flex items-center justify-center bg-bg-primary h-full">
-        {currentSong?.album_art_path ? (
-          <AlbumArtImage
-            filePath={currentSong.file_path}
-            path={currentSong.album_art_path}
-            alt={currentSong.title || "Album Art"}
-            className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
-            fallback={
-              <div className="w-96 h-96 bg-hover rounded-lg flex items-center justify-center shadow-lg">
-                <Disc3 className="w-12 h-12 text-text-muted/70" />
-              </div>
-            }
-          />
-        ) : (
-          <div className="w-96 h-96 bg-hover rounded-lg flex items-center justify-center shadow-lg">
+        <div className="w-[60vh] max-w-[70%] max-h-[70%] aspect-square bg-hover rounded-lg flex items-center justify-center shadow-lg overflow-hidden">
+          {currentSong?.album_art_path ? (
+            <AlbumArtImage
+              filePath={currentSong.file_path}
+              path={currentSong.album_art_path}
+              alt={currentSong.title || "Album Art"}
+              className="w-full h-full object-cover"
+              fallback={<Disc3 className="w-12 h-12 text-text-muted/70" />}
+            />
+          ) : (
             <Disc3 className="w-12 h-12 text-text-muted/70" />
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* 우측: 재생 대기열 목록 */}
