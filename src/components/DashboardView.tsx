@@ -26,7 +26,7 @@ const StatCard = ({
     <div className="flex items-center justify-between">
       <div>
         <p className="text-xs text-text-muted">{title}</p>
-        <p className="text-2xl font-semibold text-text-primary mt-2">{value}</p>
+        <p className="text-xl font-semibold text-text-primary mt-2">{value}</p>
         {helper && <p className="text-xs text-text-muted mt-1">{helper}</p>}
       </div>
       <div className="h-10 w-10 rounded-lg bg-bg-primary border border-border flex items-center justify-center">
@@ -50,8 +50,12 @@ const TagChip = ({ label, count }: { label: string; count: string }) => (
   </div>
 );
 
-const EmptyState = ({ label }: { label: string }) => (
-  <div className="text-sm text-text-muted py-6 text-center">{label}</div>
+const EmptyOverlay = ({ className = "rounded-lg" }: { className?: string }) => (
+  <div
+    className={`absolute inset-0 ${className} backdrop-blur-sm flex items-center justify-center text-sm text-text-muted z-10 pointer-events-none`}
+  >
+    데이터 없음
+  </div>
 );
 
 type DashboardDateCount = { label: string; count: number };
@@ -188,6 +192,10 @@ export const DashboardView = () => {
     if (!chartPoints.length) return 0;
     return Math.max(...chartPoints.map((point) => point.count));
   }, [chartPoints]);
+  const hasChartData = useMemo(
+    () => chartPoints.some((point) => point.count > 0),
+    [chartPoints]
+  );
 
   const topSongs = stats?.top_songs ?? [];
   const recentSongs = stats?.recent_songs ?? [];
@@ -199,19 +207,19 @@ export const DashboardView = () => {
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-bg-primary">
-      <div className="px-6 py-4 border-b border-border bg-bg-primary">
+      <div className="flex-shrink-0 px-4 pt-4 pb-4 border-b border-border bg-bg-primary">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-semibold text-text-primary">대시보드</h2>
+            <h2 className="text-lg font-semibold text-text-primary">대시보드</h2>
             <p className="text-sm text-text-muted mt-1">
-              전체 보관함 요약과 재생 패턴을 한눈에 확인하세요.
+              노래들의 데이터 요약과 재생 패턴을 한눈에 확인하세요.
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs text-text-muted" />
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-8">
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-8">
         {section === "overall" && (
           <section className="space-y-5">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -233,7 +241,7 @@ export const DashboardView = () => {
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-5 gap-3">
-              <div className="xl:col-span-3 rounded-lg border border-border bg-bg-sidebar p-4">
+              <div className="xl:col-span-3 rounded-lg border border-border bg-bg-sidebar p-4 relative overflow-hidden">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Flame className="w-4 h-4 text-text-muted" />
@@ -276,30 +284,27 @@ export const DashboardView = () => {
                   </div>
                 </div>
                 <div className="mt-4 h-52 rounded-md bg-bg-primary border border-border flex items-end gap-2 px-4 pb-4">
-                  {chartPoints.length > 0 ? (
-                    chartPoints.map((point) => {
-                      const height = maxChartCount > 0 ? Math.max(6, (point.count / maxChartCount) * 100) : 6;
-                      return (
-                        <div key={point.label} className="flex-1 flex flex-col items-center gap-2">
-                          <div
-                            className="w-full rounded-full bg-[#5865f2]/70"
-                            style={{ height: `${height}%` }}
-                          />
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="text-sm text-text-muted w-full h-full flex items-center justify-center text-center">
-                      재생 데이터가 없습니다.
-                    </div>
-                  )}
+                  {hasChartData
+                    ? chartPoints.map((point) => {
+                        const height = maxChartCount > 0 ? Math.max(6, (point.count / maxChartCount) * 100) : 6;
+                        return (
+                          <div key={point.label} className="flex-1 flex flex-col items-center gap-2">
+                            <div
+                              className="w-full rounded-full bg-[#5865f2]/70"
+                              style={{ height: `${height}%` }}
+                            />
+                          </div>
+                        );
+                      })
+                    : null}
                 </div>
-                <p className="text-xs text-text-muted mt-3">
-                  {chartPoints.length > 0 ? "최근 재생 추이를 표시합니다." : "차트 데이터가 없습니다."}
-                </p>
+                {hasChartData && (
+                  <p className="text-xs text-text-muted mt-3">최근 재생 추이를 표시합니다.</p>
+                )}
+                {!hasChartData && <EmptyOverlay />}
               </div>
 
-              <div className="xl:col-span-2 rounded-lg border border-border bg-bg-sidebar p-4 space-y-3">
+              <div className="xl:col-span-2 rounded-lg border border-border bg-bg-sidebar p-4 space-y-3 relative min-h-[140px] overflow-hidden">
                 <h4 className="text-sm font-semibold text-text-primary">최근 등록한 노래</h4>
                 {recentSongs.length > 0 ? (
                   <div className="space-y-2">
@@ -312,13 +317,13 @@ export const DashboardView = () => {
                     ))}
                   </div>
                 ) : (
-                  <EmptyState label="최근 등록된 노래가 없습니다." />
+                  <EmptyOverlay />
                 )}
               </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
-              <div className="rounded-lg border border-border bg-bg-sidebar p-4 space-y-3">
+              <div className="rounded-lg border border-border bg-bg-sidebar p-4 space-y-3 relative min-h-[140px] overflow-hidden">
                 <h4 className="text-sm font-semibold text-text-primary">자주 듣는 노래</h4>
                 {topSongs.length > 0 ? (
                   <div className="space-y-2">
@@ -331,10 +336,10 @@ export const DashboardView = () => {
                     ))}
                   </div>
                 ) : (
-                  <EmptyState label="재생 기록이 없습니다." />
+                  <EmptyOverlay />
                 )}
               </div>
-              <div className="rounded-lg border border-border bg-bg-sidebar p-4 space-y-3">
+              <div className="rounded-lg border border-border bg-bg-sidebar p-4 space-y-3 relative min-h-[140px] overflow-hidden">
                 <h4 className="text-sm font-semibold text-text-primary">자주 듣는 플레이리스트</h4>
                 {topPlaylists.length > 0 ? (
                   <div className="space-y-2">
@@ -347,10 +352,10 @@ export const DashboardView = () => {
                     ))}
                   </div>
                 ) : (
-                  <EmptyState label="플레이리스트 기록이 없습니다." />
+                  <EmptyOverlay />
                 )}
               </div>
-              <div className="rounded-lg border border-border bg-bg-sidebar p-4 space-y-3">
+              <div className="rounded-lg border border-border bg-bg-sidebar p-4 space-y-3 relative min-h-[140px] overflow-hidden">
                 <h4 className="text-sm font-semibold text-text-primary">자주 듣는 폴더</h4>
                 {topFolders.length > 0 ? (
                   <div className="space-y-2">
@@ -359,7 +364,7 @@ export const DashboardView = () => {
                     ))}
                   </div>
                 ) : (
-                  <EmptyState label="폴더 기록이 없습니다." />
+                  <EmptyOverlay />
                 )}
               </div>
             </div>
@@ -369,41 +374,43 @@ export const DashboardView = () => {
         {section === "artist" && (
           <section className="space-y-5">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              <div className="rounded-lg border border-border bg-bg-sidebar p-4 flex items-center justify-between">
+              <div className="rounded-lg border border-border bg-bg-sidebar p-4 flex items-center justify-between relative min-h-[120px] overflow-hidden">
                 <div>
-                  <p className="text-xs text-text-muted uppercase tracking-[0.2em]">가장 많이 들은 아티스트</p>
+                  <p className="text-xs text-text-muted">가장 많이 들은 아티스트</p>
                   <p className="text-lg font-semibold text-text-primary mt-2">
                     {stats?.artist_most_played?.name ?? "-"}
                   </p>
-                  <p className="text-xs text-text-muted mt-1">
-                    {stats?.artist_most_played
-                      ? formatCount(stats.artist_most_played.count, "회 재생")
-                      : "재생 기록이 없습니다."}
-                  </p>
+                  {stats?.artist_most_played && (
+                    <p className="text-xs text-text-muted mt-1">
+                      {formatCount(stats.artist_most_played.count, "회 재생")}
+                    </p>
+                  )}
                 </div>
                 <div className="w-10 h-10 rounded-lg bg-bg-primary border border-border flex items-center justify-center">
                   <User className="w-5 h-5 text-text-muted" />
                 </div>
+                {!stats?.artist_most_played && <EmptyOverlay />}
               </div>
-              <div className="rounded-lg border border-border bg-bg-sidebar p-4 flex items-center justify-between">
+              <div className="rounded-lg border border-border bg-bg-sidebar p-4 flex items-center justify-between relative min-h-[120px] overflow-hidden">
                 <div>
-                  <p className="text-xs text-text-muted uppercase tracking-[0.2em]">가장 적게 들은 아티스트</p>
+                  <p className="text-xs text-text-muted">가장 적게 들은 아티스트</p>
                   <p className="text-lg font-semibold text-text-primary mt-2">
                     {stats?.artist_least_played?.name ?? "-"}
                   </p>
-                  <p className="text-xs text-text-muted mt-1">
-                    {stats?.artist_least_played
-                      ? formatCount(stats.artist_least_played.count, "회 재생")
-                      : "재생 기록이 없습니다."}
-                  </p>
+                  {stats?.artist_least_played && (
+                    <p className="text-xs text-text-muted mt-1">
+                      {formatCount(stats.artist_least_played.count, "회 재생")}
+                    </p>
+                  )}
                 </div>
                 <div className="w-10 h-10 rounded-lg bg-bg-primary border border-border flex items-center justify-center">
                   <User className="w-5 h-5 text-text-muted" />
                 </div>
+                {!stats?.artist_least_played && <EmptyOverlay />}
               </div>
             </div>
 
-            <div className="rounded-lg border border-border bg-bg-sidebar p-4 space-y-3">
+            <div className="rounded-lg border border-border bg-bg-sidebar p-4 space-y-3 relative min-h-[140px] overflow-hidden">
               <h4 className="text-sm font-semibold text-text-primary">자주 듣는 아티스트</h4>
               {topArtists.length > 0 ? (
                 <div className="space-y-2">
@@ -412,7 +419,7 @@ export const DashboardView = () => {
                   ))}
                 </div>
               ) : (
-                <EmptyState label="재생 기록이 없습니다." />
+                <EmptyOverlay />
               )}
             </div>
           </section>
@@ -421,53 +428,57 @@ export const DashboardView = () => {
         {section === "tag" && (
           <section className="space-y-5">
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-              <div className="rounded-lg border border-border bg-bg-sidebar p-4">
-                <p className="text-xs text-text-muted uppercase tracking-[0.2em]">많이 들은 태그</p>
+              <div className="rounded-lg border border-border bg-bg-sidebar p-4 relative min-h-[120px] overflow-hidden">
+                <p className="text-xs text-text-muted">많이 들은 태그</p>
                 <p className="text-lg font-semibold text-text-primary mt-2">
                   {stats?.tag_most_played?.name ?? "-"}
                 </p>
-                <p className="text-xs text-text-muted mt-1">
-                  {stats?.tag_most_played
-                    ? formatCount(stats.tag_most_played.count, "회 재생")
-                    : "재생 기록이 없습니다."}
-                </p>
+                {stats?.tag_most_played && (
+                  <p className="text-xs text-text-muted mt-1">
+                    {formatCount(stats.tag_most_played.count, "회 재생")}
+                  </p>
+                )}
+                {!stats?.tag_most_played && <EmptyOverlay />}
               </div>
-              <div className="rounded-lg border border-border bg-bg-sidebar p-4">
-                <p className="text-xs text-text-muted uppercase tracking-[0.2em]">적게 들은 태그</p>
+              <div className="rounded-lg border border-border bg-bg-sidebar p-4 relative min-h-[120px] overflow-hidden">
+                <p className="text-xs text-text-muted">적게 들은 태그</p>
                 <p className="text-lg font-semibold text-text-primary mt-2">
                   {stats?.tag_least_played?.name ?? "-"}
                 </p>
-                <p className="text-xs text-text-muted mt-1">
-                  {stats?.tag_least_played
-                    ? formatCount(stats.tag_least_played.count, "회 재생")
-                    : "재생 기록이 없습니다."}
-                </p>
+                {stats?.tag_least_played && (
+                  <p className="text-xs text-text-muted mt-1">
+                    {formatCount(stats.tag_least_played.count, "회 재생")}
+                  </p>
+                )}
+                {!stats?.tag_least_played && <EmptyOverlay />}
               </div>
-              <div className="rounded-lg border border-border bg-bg-sidebar p-4">
-                <p className="text-xs text-text-muted uppercase tracking-[0.2em]">가장 많은 태그</p>
+              <div className="rounded-lg border border-border bg-bg-sidebar p-4 relative min-h-[120px] overflow-hidden">
+                <p className="text-xs text-text-muted">가장 많은 태그</p>
                 <p className="text-lg font-semibold text-text-primary mt-2">
                   {stats?.tag_most_used?.name ?? "-"}
                 </p>
-                <p className="text-xs text-text-muted mt-1">
-                  {stats?.tag_most_used
-                    ? `${formatCount(stats.tag_most_used.count, "곡")} 등록됨`
-                    : "태그가 없습니다."}
-                </p>
+                {stats?.tag_most_used && (
+                  <p className="text-xs text-text-muted mt-1">
+                    {`${formatCount(stats.tag_most_used.count, "곡")} 등록됨`}
+                  </p>
+                )}
+                {!stats?.tag_most_used && <EmptyOverlay />}
               </div>
-              <div className="rounded-lg border border-border bg-bg-sidebar p-4">
-                <p className="text-xs text-text-muted uppercase tracking-[0.2em]">가장 적은 태그</p>
+              <div className="rounded-lg border border-border bg-bg-sidebar p-4 relative min-h-[120px] overflow-hidden">
+                <p className="text-xs text-text-muted">가장 적은 태그</p>
                 <p className="text-lg font-semibold text-text-primary mt-2">
                   {stats?.tag_least_used?.name ?? "-"}
                 </p>
-                <p className="text-xs text-text-muted mt-1">
-                  {stats?.tag_least_used
-                    ? `${formatCount(stats.tag_least_used.count, "곡")} 등록됨`
-                    : "태그가 없습니다."}
-                </p>
+                {stats?.tag_least_used && (
+                  <p className="text-xs text-text-muted mt-1">
+                    {`${formatCount(stats.tag_least_used.count, "곡")} 등록됨`}
+                  </p>
+                )}
+                {!stats?.tag_least_used && <EmptyOverlay />}
               </div>
             </div>
 
-            <div className="rounded-lg border border-border bg-bg-sidebar p-4 space-y-3">
+            <div className="rounded-lg border border-border bg-bg-sidebar p-4 space-y-3 relative min-h-[140px] overflow-hidden">
               <h4 className="text-sm font-semibold text-text-primary">자주 듣는 태그</h4>
               {topTags.length > 0 ? (
                 <div className="space-y-2">
@@ -476,11 +487,11 @@ export const DashboardView = () => {
                   ))}
                 </div>
               ) : (
-                <EmptyState label="등록된 태그가 없습니다." />
+                <EmptyOverlay />
               )}
             </div>
 
-            <div className="rounded-lg border border-border bg-bg-sidebar p-4">
+            <div className="rounded-lg border border-border bg-bg-sidebar p-4 relative min-h-[140px] overflow-hidden">
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-semibold text-text-primary">현재 등록된 모든 태그</h4>
                 <div className="flex items-center gap-2 text-xs text-text-muted">
@@ -495,7 +506,7 @@ export const DashboardView = () => {
                   ))}
                 </div>
               ) : (
-                <EmptyState label="태그 데이터가 없습니다." />
+                <EmptyOverlay />
               )}
             </div>
           </section>
