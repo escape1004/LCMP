@@ -1,4 +1,4 @@
-import { useQueueStore } from "../stores/queueStore";
+﻿import { useQueueStore } from "../stores/queueStore";
 import { AlbumArtImage } from "./AlbumArtImage";
 import { Disc3 } from "lucide-react";
 
@@ -13,7 +13,7 @@ export const QueueView = () => {
 
   return (
     <div className="h-full w-full flex overflow-hidden bg-bg-primary">
-      {/* 좌측: 앨범 커버/동영상 */}
+      {/* 좌측: 앨범 커버/영상 */}
       <div className="flex-1 flex items-center justify-center bg-bg-primary h-full">
         {currentSong?.album_art_path ? (
           <AlbumArtImage
@@ -42,7 +42,7 @@ export const QueueView = () => {
             {queue.length === 0 ? (
               <div className="flex-1 flex items-center justify-center">
                 <div className="text-text-muted text-sm text-center">
-                  대기열이 비어있습니다
+                  대기열이 비었습니다.
                 </div>
               </div>
             ) : (
@@ -56,7 +56,7 @@ export const QueueView = () => {
                   }`}
                   onClick={() => handleSongClick(index)}
                 >
-                  {/* 앨범 아트 썸네일 */}
+                  {/* 앨범 커버 썸네일 */}
                   <div className="w-12 h-12 bg-hover rounded flex items-center justify-center flex-shrink-0">
                     {song.album_art_path ? (
                       <AlbumArtImage
@@ -102,9 +102,10 @@ export const QueueView = () => {
   );
 };
 
-// 재생 시간 포맷팅 함수
+// 재생 시간 포맷 함수
 function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
+

@@ -1,4 +1,4 @@
-use crate::database::get_connection;
+﻿use crate::database::get_connection;
 use crate::models::Song;
 use crate::commands::folder::scan_folder_for_songs;
 use crate::commands::player::{extract_metadata, extract_waveform};
@@ -883,10 +883,10 @@ pub async fn prune_album_art_cache(max_size_mb: Option<u64>, max_age_days: Optio
     })
 }
 
-// 현재 웨이폼 생성 중인 노래 ID를 추적하는 전역 상태
+// 현재 웨이브폼 생성 중인 곡 ID를 추적하는 전역 상태
 static GENERATING_WAVEFORM_SONG_ID: Mutex<Option<i64>> = Mutex::new(None);
 
-// 웨이폼을 데이터베이스에 저장하는 함수
+// 웨이브폼을 DB에 저장하는 함수
 fn save_waveform_to_db(file_path: &str, waveform: &[f32]) -> Result<(), String> {
     let conn = get_connection().map_err(|e| e.to_string())?;
     
@@ -903,15 +903,15 @@ fn save_waveform_to_db(file_path: &str, waveform: &[f32]) -> Result<(), String> 
     Ok(())
 }
 
-// 웨이폼이 없는 노래들을 백그라운드에서 생성하는 함수
+// 웨이브폼이 없는 곡을 백그라운드에서 생성하는 함수
 pub(crate) fn generate_waveforms_for_songs_without_waveform(conn: &rusqlite::Connection) {
-    // 이미 처리 중인 노래가 있으면 스킵
+    // 이미 처리 중인 곡이 있으면 스킵
     if GENERATING_WAVEFORM_SONG_ID.lock().unwrap().is_some() {
         return;
     }
     
-    // 웨이폼이 없는 노래들 찾기 (한 번에 1개씩만 처리하여 메모리 사용량 최소화)
-    // 제목 순서로 처리하여 사용자가 보는 순서와 일치시킴
+    // 웨이브폼 없는 곡 찾기 (한 번에 1곡만 처리해 메모리 사용 최소화)
+    // 제목 순서로 처리해 사용자에게 보이는 순서와 일치
     let mut stmt = match conn.prepare(
         "SELECT id, file_path FROM songs WHERE waveform_data IS NULL OR waveform_data = '' ORDER BY title ASC LIMIT 1"
     ) {
@@ -928,7 +928,7 @@ pub(crate) fn generate_waveforms_for_songs_without_waveform(conn: &rusqlite::Con
         Err(_) => return,
     };
     
-    // 백그라운드 스레드에서 웨이폼 생성
+    // 백그라운드 스레드에서 웨이브폼 생성
     if !songs.is_empty() {
         let (song_id, file_path) = songs[0].clone();
         
@@ -936,17 +936,17 @@ pub(crate) fn generate_waveforms_for_songs_without_waveform(conn: &rusqlite::Con
         *GENERATING_WAVEFORM_SONG_ID.lock().unwrap() = Some(song_id);
         
         thread::spawn(move || {
-            // 파일이 존재하는지 확인
+            // 파일 존재 확인
             if Path::new(&file_path).exists() {
-                // 웨이폼 추출
+                // ?⑥씠??異붿텧
                 match tokio::runtime::Runtime::new() {
                     Ok(rt) => {
                         if let Ok(waveform) = rt.block_on(extract_waveform(file_path.clone(), 150)) {
-                            // 데이터베이스에 저장
+                            // DB에 저장
                             if let Err(e) = save_waveform_to_db(&file_path, &waveform) {
                                 eprintln!("Failed to save waveform for {}: {}", file_path, e);
                             } else {
-                                // 저장 성공 후 약간의 지연을 두고 상태 업데이트 (데이터베이스 커밋 보장)
+                                // 저장 성공 후 잠시 대기해 상태 업데이트 보장
                                 thread::sleep(Duration::from_millis(100));
                             }
                         }
@@ -960,7 +960,7 @@ pub(crate) fn generate_waveforms_for_songs_without_waveform(conn: &rusqlite::Con
             // 처리 완료 시 ID 제거
             *GENERATING_WAVEFORM_SONG_ID.lock().unwrap() = None;
             
-            // 다음 노래 처리 (재귀적으로 호출)
+            // 다음 곡 처리 (재귀 호출)
             if let Ok(conn) = get_connection() {
                 generate_waveforms_for_songs_without_waveform(&conn);
             }
@@ -981,8 +981,8 @@ pub async fn get_songs_by_folder(folder_id: i64) -> Result<SongList, String> {
         )
         .map_err(|e| e.to_string())?;
     
-    // 폴더가 존재하는지 확인하고 스캔
-    // scan_folder_for_songs 내부에서 이미 웨이폼 생성을 호출하므로 여기서는 중복 호출하지 않음
+    // 폴더가 존재하면 스캔
+    // scan_folder_for_songs 내부에서 웨이브폼 생성 호출을 하므로 중복 호출 방지
     if Path::new(&folder_path).exists() {
         scan_folder_for_songs(&conn, &folder_path).map_err(|e| e.to_string())?;
     }
@@ -990,7 +990,7 @@ pub async fn get_songs_by_folder(folder_id: i64) -> Result<SongList, String> {
     // 폴더 경로 정규화 (Windows 경로 처리)
     let normalized_path = folder_path.replace("\\", "/");
     
-    // 폴더 경로로 시작하는 노래들 가져오기
+    // 폴더 경로로 시작하는 노래 가져오기
     let mut stmt = conn
         .prepare(
             "SELECT id, file_path, title, artist, album, duration, year, genre, album_art_path, created_at, updated_at, waveform_data 
@@ -1106,7 +1106,7 @@ pub async fn get_file_sizes(file_paths: Vec<String>) -> Result<Vec<(String, u64)
                 results.push((file_path, metadata.len()));
             }
             Err(_) => {
-                // 파일이 없거나 접근할 수 없으면 0으로 설정
+                // 파일이 없거나 읽을 수 없으면 0으로 설정
                 results.push((file_path, 0));
             }
         }
@@ -1192,8 +1192,8 @@ pub async fn update_song_metadata(payload: UpdateSongMetadataPayload) -> Result<
     let supports_file_metadata = matches!(ext, "mp3" | "flac");
     if !supports_file_metadata {
         return Err(format!(
-            "지원하지 않는 파일 확장자입니다. 파일 메타데이터 저장은 mp3/flac만 지원합니다. (현재: {})",
-            if ext.is_empty() { "알 수 없음" } else { ext }
+            "지원하지 않는 파일 확장자입니다. 파일 메타데이터는 mp3/flac만 지원합니다. (현재: {})",
+            if ext.is_empty() { "확장자 없음" } else { ext }
         ));
     }
     
@@ -1312,7 +1312,7 @@ pub async fn update_song_tags(payload: UpdateSongTagsPayload) -> Result<Song, St
         .map_err(|e| format!("Failed to load song path: {}", e))?;
 
     if !Path::new(&file_path).exists() {
-        return Err("?뚯씪??議댁옱?섏? ?딆뒿?덈떎.".to_string());
+        return Err("파일이 존재하지 않습니다.".to_string());
     }
 
     let normalized = normalize_tags(payload.tags);
@@ -1331,8 +1331,8 @@ pub async fn update_song_tags(payload: UpdateSongTagsPayload) -> Result<Song, St
         }
         _ => {
             return Err(format!(
-                "吏?먰븯吏 ?딅뒗 ?뚯씪 ?뺤옣?먯엯?덈떎. ?뚯씪 硫뷀??곗씠????μ? mp3/flac留?吏?먰빀?덈떎. (?꾩옱: {})",
-                if ext.is_empty() { "?????놁쓬" } else { ext }
+                "지원하지 않는 파일 확장자입니다. 파일 메타데이터는 mp3/flac만 지원합니다. (현재: {})",
+                if ext.is_empty() { "확장자 없음" } else { ext }
             ));
         }
     }
@@ -1365,3 +1365,5 @@ pub async fn update_song_tags(payload: UpdateSongTagsPayload) -> Result<Song, St
 
     Ok(song)
 }
+
+

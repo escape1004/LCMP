@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { X, GripVertical } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable, DropResult, DragStart } from '@hello-pangea/dnd';
 import { Button } from './ui/button';
@@ -35,7 +35,7 @@ export const ColumnSelectorDialog = ({ open, onOpenChange }: ColumnSelectorDialo
       // 체크 추가
       newColumns = [...tempColumns, column];
       
-      // 앨범아트를 체크하면 항상 최상단으로 이동
+      // 앨범 커버를 체크하면 항상 최상단으로 이동
       if (column === 'album_art') {
         const albumArtIndex = newColumns.indexOf('album_art');
         if (albumArtIndex > 0) {
@@ -52,9 +52,9 @@ export const ColumnSelectorDialog = ({ open, onOpenChange }: ColumnSelectorDialo
   };
 
   const handleDragStart = (start: DragStart) => {
-    // 앨범 아트 드래그 시도 시 토스트 메시지 표시
+    // 앨범 커버 드래그 시도 시 토스트 표시
     if (start.draggableId === 'album_art') {
-      showToast('앨범 아트의 순서는 변경할 수 없습니다.');
+      showToast('앨범 커버의 순서는 변경할 수 없습니다.');
     }
   };
 
@@ -66,10 +66,10 @@ export const ColumnSelectorDialog = ({ open, onOpenChange }: ColumnSelectorDialo
     
     if (sourceIndex === destinationIndex) return;
     
-    // 앨범 아트는 드래그 불가
+    // 앨범 커버는 드래그 불가
     if (result.draggableId === 'album_art') return;
     
-    // tempColumns에서 선택된 컬럼들만 순서 변경
+    // tempColumns에서 선택된 컬럼만 순서 변경
     const selectedColumns = tempColumns;
     const newOrder = Array.from(selectedColumns);
     const [removed] = newOrder.splice(sourceIndex, 1);
@@ -79,14 +79,14 @@ export const ColumnSelectorDialog = ({ open, onOpenChange }: ColumnSelectorDialo
   };
 
   const handleSave = async () => {
-    // 앨범아트가 있으면 항상 첫 번째로 이동
+    // 앨범 커버가 있으면 항상 첫 번째로 이동
     let finalColumns = [...tempColumns];
     const albumArtIndex = finalColumns.indexOf('album_art');
     if (albumArtIndex > 0) {
       finalColumns.splice(albumArtIndex, 1);
       finalColumns.unshift('album_art');
     }
-    // 앨범아트가 없으면 그대로 유지 (첫 번째에 강제 추가하지 않음)
+    // 앨범 커버가 없으면 그대로 사용 (첫 번째 강제 추가 안 함)
     
     await setColumns(finalColumns);
     onOpenChange(false);
@@ -151,7 +151,7 @@ export const ColumnSelectorDialog = ({ open, onOpenChange }: ColumnSelectorDialo
                                 e.stopPropagation();
                                 if (isAlbumArt) {
                                   e.preventDefault();
-                                  showToast('앨범 아트의 순서는 변경할 수 없습니다.');
+                                  showToast('앨범 커버의 순서는 변경할 수 없습니다.');
                                 }
                               }}
                               onClick={(e) => {
@@ -178,7 +178,7 @@ export const ColumnSelectorDialog = ({ open, onOpenChange }: ColumnSelectorDialo
                   })}
                   {provided.placeholder}
                   
-                  {/* 선택되지 않은 컬럼들 */}
+                  {/* 선택되지 않은 컬럼 */}
                   {AVAILABLE_COLUMNS.filter(col => !tempColumns.includes(col.key)).map((column) => (
                     <label
                       key={column.key}
@@ -223,3 +223,5 @@ export const ColumnSelectorDialog = ({ open, onOpenChange }: ColumnSelectorDialo
     </div>
   );
 };
+
+

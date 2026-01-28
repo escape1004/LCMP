@@ -1,9 +1,9 @@
 ﻿import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/tauri';
 
-// ?ъ슜 媛?ν븳 紐⑤뱺 而щ읆 ?꾨뱶 ?뺤쓽
+// 사용 가능한 모든 컬럼 키 정의
 export const AVAILABLE_COLUMNS = [
-  { key: 'album_art', label: '앨범 아트', sortable: false },
+  { key: 'album_art', label: '앨범 커버', sortable: false },
   { key: 'file_name', label: '파일명' },
   { key: 'title', label: '제목' },
   { key: 'artist', label: '아티스트' },
@@ -38,7 +38,7 @@ interface TableColumnsStore {
   reorderColumns: (newOrder: ColumnKey[]) => Promise<void>;
 }
 
-// 湲곕낯 而щ읆 ?덈퉬 (?쎌?)
+// 기본 컬럼 너비 (px)
 const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = {
   album_art: 60,
   file_name: 200,
@@ -55,7 +55,7 @@ const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = {
 };
 
 export const useTableColumnsStore = create<TableColumnsStore>((set, get) => ({
-  visibleColumns: ['title', 'artist', 'album', 'duration'], // 湲곕낯媛?
+  visibleColumns: ['title', 'artist', 'album', 'duration'], // 기본값
   columnWidths: { ...DEFAULT_COLUMN_WIDTHS },
   sortColumn: null,
   sortOrder: null,
@@ -66,33 +66,33 @@ export const useTableColumnsStore = create<TableColumnsStore>((set, get) => ({
     try {
       let columns = await invoke<ColumnKey[]>('get_table_columns');
       
-      // ?⑤쾾?꾪듃媛 ?덉쑝硫???긽 泥?踰덉㎏濡??대룞
+      // 앨범 커버가 있으면 항상 첫 번째로 이동
       const albumArtIndex = columns.indexOf('album_art');
       if (albumArtIndex > 0) {
         columns = [...columns];
         columns.splice(albumArtIndex, 1);
         columns.unshift('album_art');
       }
-      // ?⑤쾾?꾪듃媛 ?놁쑝硫?洹몃?濡??좎? (泥?踰덉㎏??媛뺤젣 異붽??섏? ?딆쓬)
+      // 앨범 커버가 없으면 그대로 사용 (첫 번째 강제 추가 안 함)
       
       set({ visibleColumns: columns, isLoading: false });
     } catch (error) {
       console.error('Failed to load table columns:', error);
-      // 湲곕낯媛??좎?
+      // 기본값 적용
       set({ isLoading: false });
     }
   },
 
   setColumns: async (columns: ColumnKey[]) => {
     try {
-      // ?⑤쾾?꾪듃媛 ?덉쑝硫???긽 泥?踰덉㎏濡??대룞
+      // 앨범 커버가 있으면 항상 첫 번째로 이동
       let finalColumns = [...columns];
       const albumArtIndex = finalColumns.indexOf('album_art');
       if (albumArtIndex > 0) {
         finalColumns.splice(albumArtIndex, 1);
         finalColumns.unshift('album_art');
       }
-      // ?⑤쾾?꾪듃媛 ?놁쑝硫?洹몃?濡??좎? (泥?踰덉㎏??媛뺤젣 異붽??섏? ?딆쓬)
+      // 앨범 커버가 없으면 그대로 사용 (첫 번째 강제 추가 안 함)
       
       await invoke('set_table_columns', { columns: finalColumns });
       set({ visibleColumns: finalColumns });
@@ -107,7 +107,7 @@ export const useTableColumnsStore = create<TableColumnsStore>((set, get) => ({
       ? visibleColumns.filter(c => c !== column)
       : [...visibleColumns, column];
     
-    // 理쒖냼 1媛?而щ읆? ?좎?
+    // 최소 1개 컬럼은 유지
     if (newColumns.length > 0) {
       await setColumns(newColumns);
     }
@@ -116,7 +116,7 @@ export const useTableColumnsStore = create<TableColumnsStore>((set, get) => ({
   loadColumnWidths: async () => {
     try {
       const widths = await invoke<Record<string, number>>('get_table_column_widths');
-      // 湲곕낯媛믨낵 蹂묓빀
+      // 기본값과 병합
       set((_state) => ({
         columnWidths: { ...DEFAULT_COLUMN_WIDTHS, ...widths },
       }));
@@ -147,30 +147,30 @@ export const useTableColumnsStore = create<TableColumnsStore>((set, get) => ({
   toggleSort: (column: ColumnKey) => {
     const { sortColumn, sortOrder } = get();
     
-    // ?⑤쾾?꾪듃???뺣젹 遺덇?
+    // 앨범 커버는 정렬 불가
     if (column === 'album_art') return;
     
     if (sortColumn === column) {
-      // 媛숈? 而щ읆 ?대┃: ?ㅻ쫫李⑥닚 -> ?대┝李⑥닚 -> 珥덇린??
+      // 같은 컬럼 클릭: 오름차순 -> 내림차순 -> 초기화
       if (sortOrder === 'asc') {
         set({ sortOrder: 'desc' });
       } else if (sortOrder === 'desc') {
         set({ sortColumn: null, sortOrder: null });
       }
     } else {
-      // ?ㅻⅨ 而щ읆 ?대┃: ?ㅻ쫫李⑥닚?쇰줈 ?쒖옉
+      // 다른 컬럼 클릭: 오름차순으로 시작
       set({ sortColumn: column, sortOrder: 'asc' });
     }
   },
 
   reorderColumns: async (newOrder: ColumnKey[]) => {
-    // ?⑤쾾?꾪듃媛 ?덉쑝硫???긽 泥?踰덉㎏濡??대룞
+    // 앨범 커버가 있으면 항상 첫 번째로 이동
     const albumArtIndex = newOrder.indexOf('album_art');
     if (albumArtIndex > 0) {
       newOrder.splice(albumArtIndex, 1);
       newOrder.unshift('album_art');
     }
-    // ?⑤쾾?꾪듃媛 ?놁쑝硫?洹몃?濡??좎?
+    // 앨범 커버가 없으면 그대로 사용
     
     try {
       await invoke('set_table_columns', { columns: newOrder });
@@ -180,6 +180,7 @@ export const useTableColumnsStore = create<TableColumnsStore>((set, get) => ({
     }
   },
 }));
+
 
 
 
