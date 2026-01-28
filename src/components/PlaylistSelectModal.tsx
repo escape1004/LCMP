@@ -56,7 +56,7 @@ export const PlaylistSelectModal = ({
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h2 className="text-base font-semibold text-text-primary">
-            ?뚮젅?대━?ㅽ듃 ?좏깮
+            플레이리스트 선택
           </h2>
           <button
             onClick={onClose}
@@ -71,7 +71,7 @@ export const PlaylistSelectModal = ({
         <div className="px-4 py-4 overflow-y-auto max-h-[calc(90vh-140px)]">
           {songTitle && (
             <div className="mb-4 text-sm text-text-muted">
-              "{songTitle}" ?몃옒瑜?異붽????뚮젅?대━?ㅽ듃瑜??좏깮?섏꽭??
+              "{songTitle}" 노래를 추가할 플레이리스트를 선택하세요.
             </div>
           )}
 
@@ -83,7 +83,7 @@ export const PlaylistSelectModal = ({
 
           {playlists.length === 0 ? (
             <div className="text-center py-8 text-text-muted">
-              ?뚮젅?대━?ㅽ듃媛 ?놁뒿?덈떎.
+              플레이리스트가 없습니다.
             </div>
           ) : (
             <div className="space-y-2">
@@ -118,7 +118,7 @@ export const PlaylistSelectModal = ({
             disabled={isLoading}
             className="text-text-primary hover:bg-hover"
           >
-            痍⑥냼
+            취소
           </Button>
         </div>
       </div>
