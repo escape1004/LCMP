@@ -295,13 +295,15 @@ export const DashboardView = () => {
                     <button
                       type="button"
                       onClick={() => setIsDateUnitOpen((prev) => !prev)}
-                      className="flex items-center gap-2 text-xs text-white bg-bg-primary border border-border rounded-md px-2 py-1 w-32 justify-between"
+                      className="h-9 px-3 rounded-md border border-border bg-bg-sidebar text-sm text-text-primary focus:outline-none cursor-pointer flex items-center gap-2 min-w-[120px]"
                     >
-                      {dateUnit === "day" ? "일별" : dateUnit === "month" ? "월별" : "연별"}
-                      <ChevronDown className="w-3 h-3" />
+                      <span className="truncate">
+                        {dateUnit === "day" ? "일별" : dateUnit === "month" ? "월별" : "연별"}
+                      </span>
+                      <ChevronDown className="w-3 h-3 ml-auto" />
                     </button>
                     {isDateUnitOpen && (
-                      <div className="absolute right-0 mt-2 w-24 rounded-md border border-border bg-bg-sidebar shadow-lg z-20 overflow-hidden">
+                      <div className="absolute right-0 mt-2 w-32 rounded-md border border-border bg-bg-sidebar shadow-lg z-20 overflow-hidden">
                         {([
                           { label: "일별", value: "day" },
                           { label: "월별", value: "month" },
@@ -314,7 +316,7 @@ export const DashboardView = () => {
                               setDateUnit(item.value);
                               setIsDateUnitOpen(false);
                             }}
-                            className={`w-full text-left px-3 py-2 text-xs transition-colors ${
+                            className={`w-full text-left px-3 py-2 text-sm transition-colors ${
                               dateUnit === item.value
                                 ? "bg-accent text-white"
                                 : "text-text-primary hover:bg-hover"
@@ -330,10 +332,10 @@ export const DashboardView = () => {
                 {hasChartData ? (
                   <div className="mt-4 h-[300px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={chartPoints} margin={{ top: 6, right: 8, left: -16, bottom: 0 }}>
+                      <LineChart data={chartPoints} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                         <XAxis dataKey="label" stroke="#9CA3AF" fontSize={12} padding={{ left: 0, right: 0 }} />
-                        <YAxis stroke="#9CA3AF" fontSize={12} width={28} />
+                        <YAxis stroke="#9CA3AF" fontSize={12} width={40} tickMargin={6} />
                         <Tooltip content={<CustomTooltip />} />
                         <Line type="monotone" dataKey="count" stroke="#5865F2" strokeWidth={2} />
                       </LineChart>
