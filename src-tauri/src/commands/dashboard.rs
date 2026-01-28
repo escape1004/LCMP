@@ -92,19 +92,50 @@ fn get_total_size(conn: &Connection) -> i64 {
 }
 
 fn get_date_counts(conn: &Connection, unit: &str) -> Vec<DashboardDateCount> {
-    let fmt = match unit {
-        "month" => "%Y-%m",
-        "year" => "%Y",
-        _ => "%Y-%m-%d",
+    let sql = match unit {
+        "month" => {
+            "WITH RECURSIVE months(m) AS (
+                SELECT date('now','start of month','-11 months')
+                UNION ALL
+                SELECT date(m,'+1 month') FROM months WHERE m < date('now','start of month')
+            )
+            SELECT strftime('%Y-%m', m) AS bucket,
+                   COALESCE(COUNT(ph.id), 0) AS cnt
+            FROM months
+            LEFT JOIN play_history ph
+              ON strftime('%Y-%m', ph.played_at) = strftime('%Y-%m', m)
+            GROUP BY m
+            ORDER BY m ASC"
+        }
+        "year" => {
+            "WITH RECURSIVE years(y) AS (
+                SELECT date('now','start of year','-4 years')
+                UNION ALL
+                SELECT date(y,'+1 year') FROM years WHERE y < date('now','start of year')
+            )
+            SELECT strftime('%Y', y) AS bucket,
+                   COALESCE(COUNT(ph.id), 0) AS cnt
+            FROM years
+            LEFT JOIN play_history ph
+              ON strftime('%Y', ph.played_at) = strftime('%Y', y)
+            GROUP BY y
+            ORDER BY y ASC"
+        }
+        _ => {
+            "WITH RECURSIVE days(d) AS (
+                SELECT date('now','-29 days')
+                UNION ALL
+                SELECT date(d,'+1 day') FROM days WHERE d < date('now')
+            )
+            SELECT strftime('%Y-%m-%d', d) AS bucket,
+                   COALESCE(COUNT(ph.id), 0) AS cnt
+            FROM days
+            LEFT JOIN play_history ph
+              ON date(ph.played_at) = d
+            GROUP BY d
+            ORDER BY d ASC"
+        }
     };
-
-    let sql = format!(
-        "SELECT strftime('{}', played_at) AS bucket, COUNT(*) as cnt
-         FROM play_history
-         GROUP BY bucket
-         ORDER BY bucket ASC",
-        fmt
-    );
 
     let mut stmt = match conn.prepare(&sql) {
         Ok(stmt) => stmt,
