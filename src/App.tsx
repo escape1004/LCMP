@@ -11,6 +11,8 @@ import { TitleBar } from "./components/TitleBar";
 import { SettingsModal } from "./components/SettingsModal";
 import { useQueueStore } from "./stores/queueStore";
 import { usePlayerStore } from "./stores/playerStore";
+import { useFolderStore } from "./stores/folderStore";
+import { usePlaylistStore } from "./stores/playlistStore";
 
 type PlaybackFinishedPayload = {
   file_path: string;
@@ -19,6 +21,10 @@ type PlaybackFinishedPayload = {
 function App() {
   const { isOpen } = useQueueStore();
   const { loadSavedVolume } = usePlayerStore();
+  const selectedFolderId = useFolderStore((state) => state.selectedFolderId);
+  const selectedPlaylistId = usePlaylistStore((state) => state.selectedPlaylistId);
+  const selectFolder = useFolderStore((state) => state.selectFolder);
+  const selectPlaylist = usePlaylistStore((state) => state.selectPlaylist);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
 
@@ -26,6 +32,11 @@ function App() {
   useEffect(() => {
     loadSavedVolume();
   }, [loadSavedVolume]);
+
+  useEffect(() => {
+    selectFolder(null);
+    selectPlaylist(null);
+  }, [selectFolder, selectPlaylist]);
 
   useEffect(() => {
     document.body.classList.toggle("window-rounded", !isMaximized);
@@ -134,13 +145,19 @@ function App() {
       }`}
     >
       <TitleBar onOpenSettings={() => setSettingsOpen(true)} />
-      <div className="flex flex-1 overflow-hidden">
+      <div className="relative flex flex-1 overflow-hidden">
+        <div className="pointer-events-none absolute top-0 left-14 right-0 h-px bg-border" />
         {/* Sidebar */}
         <Sidebar />
 
         {/* Main Content */}
         <div className="flex-1 flex flex-col overflow-hidden relative">
-          <PlaylistView />
+          <div className="pointer-events-none absolute top-0 left-0 right-0 h-px bg-border" />
+          {selectedFolderId === null && selectedPlaylistId === null ? (
+            <div className="flex-1 bg-bg-primary" />
+          ) : (
+            <PlaylistView />
+          )}
           <div 
             className={`absolute inset-0 bg-bg-primary transform transition-transform duration-300 ease-in-out z-10 ${
               isOpen ? 'translate-y-0' : 'translate-y-full'
