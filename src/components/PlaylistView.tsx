@@ -99,6 +99,7 @@ export const PlaylistView = () => {
   const [selectedSongForMetadata, setSelectedSongForMetadata] = useState<Song | null>(null);
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [selectedSongForTags, setSelectedSongForTags] = useState<Song | null>(null);
+  const [expandedTags, setExpandedTags] = useState<Record<number, boolean>>({});
   
   // ?뚮젅?대━?ㅽ듃 ?좏깮 紐⑤떖
   const [isPlaylistSelectModalOpen, setIsPlaylistSelectModalOpen] = useState(false);
@@ -852,8 +853,8 @@ export const PlaylistView = () => {
                 // songsVersion怨?waveform_data瑜?key???ы븿?섏뿬 蹂寃???由щ젋?붾쭅 蹂댁옣
                 const rowKey = `${song.id}-${songsVersion}-${song.waveform_data ? '1' : '0'}`;
                 
-                const renderCell = (columnKey: ColumnKey) => {
-                  switch (columnKey) {
+      const renderCell = (columnKey: ColumnKey) => {
+        switch (columnKey) {
                     case 'album_art':
                       return (
                         <div className="flex items-center justify-center w-full h-12">
@@ -904,9 +905,46 @@ export const PlaylistView = () => {
                     case 'year':
                       const hasYear = song.year !== null && song.year !== undefined;
                       return <span className={`block truncate ${hasYear ? 'text-text-primary' : 'text-text-muted'}`}>{song.year ? song.year.toString() : '--'}</span>;
-                    case 'genre':
-                      const hasGenre = !!song.genre;
-                      return <span className={`block truncate ${hasGenre ? 'text-text-primary' : 'text-text-muted'}`}>{song.genre || '장르 없음'}</span>;
+          case 'genre':
+            const hasGenre = !!song.genre;
+            return <span className={`block truncate ${hasGenre ? 'text-text-primary' : 'text-text-muted'}`}>{song.genre || '장르 없음'}</span>;
+          case 'tags':
+            if (!song.tags || song.tags.length === 0) {
+              return <span className="block truncate text-text-muted">태그 없음</span>;
+            }
+            {
+              const isExpanded = !!expandedTags[song.id];
+              const maxVisible = 3;
+              const hasMore = song.tags.length > maxVisible;
+              const visibleTags = isExpanded ? song.tags : song.tags.slice(0, maxVisible);
+              return (
+                <div className="flex flex-wrap gap-1 items-center">
+                  {visibleTags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center rounded-full bg-bg-sidebar px-2 py-0.5 text-xs text-text-primary"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                  {hasMore && (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setExpandedTags((prev) => ({
+                          ...prev,
+                          [song.id]: !isExpanded,
+                        }));
+                      }}
+                      className="text-xs text-text-muted hover:text-text-primary transition-colors"
+                    >
+                      {isExpanded ? '접기' : `+${song.tags.length - maxVisible}개 더보기`}
+                    </button>
+                  )}
+                </div>
+              );
+            }
                     case 'file_path':
                       const hasFilePath = !!song.file_path;
                       return <span className={`block truncate text-xs font-mono ${hasFilePath ? 'text-text-primary' : 'text-text-muted'}`}>{song.file_path || '경로 없음'}</span>;
