@@ -153,12 +153,12 @@ export const TagModal = ({ isOpen, song, onClose, onSave }: TagModalProps) => {
     <div className="modal-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-bg-primary rounded-lg w-full max-w-lg max-h-[90vh] overflow-visible">
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <h2 className="text-lg font-bold text-text-primary">태그 설정</h2>
+          <h2 className="text-base font-semibold text-text-primary">태그 설정</h2>
           <button
             onClick={onClose}
             className="text-text-muted hover:text-text-primary transition-colors"
           >
-            <X size={24} />
+            <X size={20} />
           </button>
         </div>
 
@@ -216,10 +216,11 @@ export const TagModal = ({ isOpen, song, onClose, onSave }: TagModalProps) => {
           </div>
         </div>
 
-        <div className="flex items-end justify-end gap-3 p-4 border-t border-border">
+        <div className="flex items-end justify-end gap-2 p-4 border-t border-border">
           <Button
             type="button"
             variant="ghost"
+            size="sm"
             onClick={onClose}
             className="text-text-primary hover:bg-hover"
           >
@@ -227,6 +228,7 @@ export const TagModal = ({ isOpen, song, onClose, onSave }: TagModalProps) => {
           </Button>
           <Button
             type="button"
+            size="sm"
             onClick={handleSave}
             className="bg-accent hover:bg-accent/90"
           >
@@ -237,3 +239,4 @@ export const TagModal = ({ isOpen, song, onClose, onSave }: TagModalProps) => {
     </div>
   );
 };
+

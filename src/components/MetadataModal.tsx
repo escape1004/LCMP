@@ -170,12 +170,12 @@ export const MetadataModal = ({ isOpen, song, onClose, onSave }: MetadataModalPr
     <div className="modal-overlay fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-bg-primary rounded-lg w-full max-w-2xl max-h-[90vh] overflow-hidden">
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <h2 className="text-lg font-bold text-text-primary">메타데이터 수정</h2>
+          <h2 className="text-base font-semibold text-text-primary">메타데이터 수정</h2>
           <button
             onClick={onClose}
             className="text-text-muted hover:text-text-primary transition-colors"
           >
-            <X size={24} />
+            <X size={20} />
           </button>
         </div>
 
@@ -440,10 +440,11 @@ export const MetadataModal = ({ isOpen, song, onClose, onSave }: MetadataModalPr
           </div>
         </div>
 
-        <div className="flex items-end justify-end gap-3 p-4 border-t border-border">
+        <div className="flex items-end justify-end gap-2 p-4 border-t border-border">
           <Button
             type="button"
             variant="ghost"
+            size="sm"
             onClick={onClose}
             className="text-text-primary hover:bg-hover"
           >
@@ -451,6 +452,7 @@ export const MetadataModal = ({ isOpen, song, onClose, onSave }: MetadataModalPr
           </Button>
           <Button
             type="button"
+            size="sm"
             onClick={handleSave}
             className="bg-accent hover:bg-accent/90"
           >
@@ -461,6 +463,7 @@ export const MetadataModal = ({ isOpen, song, onClose, onSave }: MetadataModalPr
     </div>
   );
 };
+
 
 
 

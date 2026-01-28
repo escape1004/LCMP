@@ -68,13 +68,13 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         overlayClassName="bg-black/50"
       >
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <DialogTitle className="text-lg font-bold text-text-primary">환경설정</DialogTitle>
+          <DialogTitle className="text-base font-semibold text-text-primary">환경설정</DialogTitle>
           <button
             type="button"
             onClick={onClose}
             className="text-text-muted hover:text-text-primary transition-colors"
           >
-            <X size={24} />
+            <X size={20} />
           </button>
         </div>
         <div className="flex h-[70vh]">

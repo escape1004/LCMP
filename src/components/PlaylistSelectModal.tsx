@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { Button } from "./ui/button";
 import { Playlist } from "../types";
@@ -55,15 +55,15 @@ export const PlaylistSelectModal = ({
       <div className="bg-bg-primary rounded-lg w-full max-w-md max-h-[90vh] overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <h2 className="text-lg font-bold text-text-primary">
-            플레이리스트 선택
+          <h2 className="text-base font-semibold text-text-primary">
+            ?뚮젅?대━?ㅽ듃 ?좏깮
           </h2>
           <button
             onClick={onClose}
             className="text-text-muted hover:text-text-primary transition-colors"
             disabled={isLoading}
           >
-            <X size={24} />
+            <X size={20} />
           </button>
         </div>
 
@@ -71,7 +71,7 @@ export const PlaylistSelectModal = ({
         <div className="px-4 py-4 overflow-y-auto max-h-[calc(90vh-140px)]">
           {songTitle && (
             <div className="mb-4 text-sm text-text-muted">
-              "{songTitle}" 노래를 추가할 플레이리스트를 선택하세요.
+              "{songTitle}" ?몃옒瑜?異붽????뚮젅?대━?ㅽ듃瑜??좏깮?섏꽭??
             </div>
           )}
 
@@ -83,7 +83,7 @@ export const PlaylistSelectModal = ({
 
           {playlists.length === 0 ? (
             <div className="text-center py-8 text-text-muted">
-              플레이리스트가 없습니다.
+              ?뚮젅?대━?ㅽ듃媛 ?놁뒿?덈떎.
             </div>
           ) : (
             <div className="space-y-2">
@@ -109,18 +109,20 @@ export const PlaylistSelectModal = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-end justify-end gap-3 p-4 border-t border-border">
+        <div className="flex items-end justify-end gap-2 p-4 border-t border-border">
           <Button
             type="button"
             variant="ghost"
+            size="sm"
             onClick={onClose}
             disabled={isLoading}
             className="text-text-primary hover:bg-hover"
           >
-            취소
+            痍⑥냼
           </Button>
         </div>
       </div>
     </div>
   );
 };
+
