@@ -218,7 +218,7 @@ export const Sidebar = () => {
         activePrimary === "dashboard" ? "w-14" : "w-[280px]"
       }`}
     >
-      <div className="w-14 bg-[#2B2D31] flex flex-col items-center py-3 gap-2 relative overflow-visible border-r border-border">
+      <div className="w-14 bg-[#2B2D31] flex flex-col items-center pt-0 pb-3 gap-2 relative overflow-visible border-r border-border">
         <div className="relative group">
           <button
             type="button"
@@ -273,7 +273,7 @@ export const Sidebar = () => {
         <div className="w-56 bg-bg-sidebar flex flex-col h-full border-r border-border">
           {activePrimary === "folders" && (
             <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="px-3 py-2 flex-shrink-0 border-b border-border">
+              <div className="px-3 pt-3 pb-3 flex-shrink-0 border-b border-border">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide">
                     폴더
@@ -287,7 +287,7 @@ export const Sidebar = () => {
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto">
-                <div className="px-3 pb-3 pt-1">
+                <div className="px-1 py-1">
                   <DragDropContext onDragEnd={handleFolderDragEnd}>
                     <Droppable droppableId="folders">
                       {(provided) => (
@@ -339,7 +339,7 @@ export const Sidebar = () => {
 
           {activePrimary === "playlists" && (
             <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="px-3 py-2 flex-shrink-0 border-b border-border">
+              <div className="px-3 pt-3 pb-3 flex-shrink-0 border-b border-border">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide">
                     플레이리스트
@@ -353,7 +353,7 @@ export const Sidebar = () => {
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto">
-                <div className="px-3 pb-3 pt-1">
+                <div className="px-1 py-1">
                   <DragDropContext onDragEnd={handlePlaylistDragEnd}>
                     <Droppable droppableId="playlists">
                       {(provided) => (
