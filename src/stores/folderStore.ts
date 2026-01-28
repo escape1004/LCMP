@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/tauri';
 import { Folder } from '../types';
+import { useQueueStore } from './queueStore';
+import { usePlayerStore } from './playerStore';
 
 interface FolderStore {
   folders: Folder[];
@@ -14,7 +16,7 @@ interface FolderStore {
   selectFolder: (folderId: number | null) => void;
 }
 
-export const useFolderStore = create<FolderStore>((set) => ({
+export const useFolderStore = create<FolderStore>((set, get) => ({
   folders: [],
   selectedFolderId: null,
   isLoading: false,
@@ -71,17 +73,58 @@ export const useFolderStore = create<FolderStore>((set) => ({
 
   removeFolder: async (folderId: number) => {
     try {
-      await invoke('remove_folder', { folderId });
-      set((state) => ({
-        folders: state.folders.filter((f) => f.id !== folderId),
-        selectedFolderId:
-          state.selectedFolderId === folderId
-            ? (() => {
-                const remaining = state.folders.filter((f) => f.id !== folderId);
-                return remaining.length > 0 ? remaining[0].id : null;
-              })()
-            : state.selectedFolderId,
-      }));
+      const targetFolder = get().folders.find((f) => f.id === folderId);
+      const result = await invoke<{ removed_song_ids: number[] }>('remove_folder', { folderId });
+      set((state) => {
+        const remaining = state.folders.filter((f) => f.id !== folderId);
+        return {
+          folders: remaining,
+          selectedFolderId:
+            state.selectedFolderId === folderId
+              ? remaining.length > 0
+                ? remaining[0].id
+                : null
+              : state.selectedFolderId,
+        };
+      });
+
+      const removedSongIds = result?.removed_song_ids ?? [];
+      if (removedSongIds.length > 0) {
+        const { removeBySongIds } = useQueueStore.getState();
+        const removal = removeBySongIds(removedSongIds);
+        const playerState = usePlayerStore.getState();
+        const currentSongRemoved =
+          playerState.currentSong &&
+          removedSongIds.includes(playerState.currentSong.id);
+
+        if (removal.removedCurrent || currentSongRemoved) {
+          if (removal.nextIndex !== null) {
+            await useQueueStore.getState().playSongAtIndex(removal.nextIndex);
+          } else {
+            await usePlayerStore.getState().cleanup();
+          }
+        }
+      } else if (targetFolder) {
+        const { removeByFolderPath } = useQueueStore.getState();
+        const removal = removeByFolderPath(targetFolder.path);
+        const playerState = usePlayerStore.getState();
+        const normalize = (value: string) => value.replace(/\\/g, '/').toLowerCase();
+        const folderPrefix = normalize(targetFolder.path).endsWith('/')
+          ? normalize(targetFolder.path)
+          : `${normalize(targetFolder.path)}/`;
+        const playingInFolder = playerState.currentSong
+          ? normalize(playerState.currentSong.file_path).startsWith(folderPrefix)
+          : false;
+        if (removal.removedCurrent) {
+          if (removal.nextIndex !== null) {
+            await useQueueStore.getState().playSongAtIndex(removal.nextIndex);
+          } else {
+            await usePlayerStore.getState().cleanup();
+          }
+        } else if (playingInFolder) {
+          await usePlayerStore.getState().cleanup();
+        }
+      }
     } catch (error) {
       console.error('Failed to remove folder:', error);
       throw error;

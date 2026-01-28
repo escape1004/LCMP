@@ -44,6 +44,9 @@ interface QueueStore {
   addToQueue: (song: Song, position?: number) => void;
   addMultipleToQueue: (songs: Song[]) => void;
   removeFromQueue: (index: number) => void;
+  removeByFolderPath: (folderPath: string) => { removedCurrent: boolean; nextIndex: number | null };
+  removeBySongIds: (songIds: number[]) => { removedCurrent: boolean; nextIndex: number | null };
+  handleMissingSong: (song: Song) => Promise<void>;
   reorderQueue: (from: number, to: number) => void;
   clearQueue: () => void;
   setCurrentIndex: (index: number | null) => void;
@@ -125,6 +128,95 @@ export const useQueueStore = create<QueueStore>((set, get) => ({
       }
       return { queue: newQueue, currentIndex: newCurrentIndex };
     });
+  },
+
+  removeByFolderPath: (folderPath: string) => {
+    const normalize = (value: string) => value.replace(/\\/g, '/').toLowerCase();
+    const normalized = normalize(folderPath);
+    const prefix = normalized.endsWith('/') ? normalized : `${normalized}/`;
+
+    const state = get();
+    const currentSong = usePlayerStore.getState().currentSong;
+    const currentSongInFolder = currentSong
+      ? normalize(currentSong.file_path).startsWith(prefix)
+      : false;
+    const removedIndices: number[] = [];
+    const newQueue = state.queue.filter((song, index) => {
+      const path = normalize(song.file_path);
+      const matches = path.startsWith(prefix);
+      if (matches) removedIndices.push(index);
+      return !matches;
+    });
+
+    const removedCurrent =
+      (state.currentIndex !== null && removedIndices.includes(state.currentIndex)) ||
+      currentSongInFolder;
+    let newCurrentIndex = state.currentIndex;
+    if (state.currentIndex !== null && !removedCurrent) {
+      const removedBefore = removedIndices.filter((i) => i < state.currentIndex!).length;
+      newCurrentIndex = state.currentIndex - removedBefore;
+    }
+    if (removedCurrent) {
+      newCurrentIndex = null;
+    }
+
+    set({ queue: newQueue, currentIndex: newCurrentIndex });
+
+    if (removedCurrent && newQueue.length > 0) {
+      const fallbackIndex = state.currentIndex ?? 0;
+      const nextIndex = Math.min(fallbackIndex, newQueue.length - 1);
+      return { removedCurrent: true, nextIndex };
+    }
+    return { removedCurrent, nextIndex: null };
+  },
+
+  removeBySongIds: (songIds: number[]) => {
+    const idSet = new Set(songIds);
+    const state = get();
+    const removedIndices: number[] = [];
+    const newQueue = state.queue.filter((song, index) => {
+      const matches = idSet.has(song.id);
+      if (matches) removedIndices.push(index);
+      return !matches;
+    });
+
+    const removedCurrent =
+      state.currentIndex !== null && removedIndices.includes(state.currentIndex);
+    let newCurrentIndex = state.currentIndex;
+    if (state.currentIndex !== null && !removedCurrent) {
+      const removedBefore = removedIndices.filter((i) => i < state.currentIndex!).length;
+      newCurrentIndex = state.currentIndex - removedBefore;
+    }
+    if (removedCurrent) {
+      newCurrentIndex = null;
+    }
+
+    set({ queue: newQueue, currentIndex: newCurrentIndex });
+
+    if (removedCurrent && newQueue.length > 0) {
+      const nextIndex = Math.min(state.currentIndex ?? 0, newQueue.length - 1);
+      return { removedCurrent: true, nextIndex };
+    }
+    return { removedCurrent, nextIndex: null };
+  },
+
+  handleMissingSong: async (song: Song) => {
+    const state = get();
+    const index = state.queue.findIndex((s) => s.id === song.id);
+    if (index === -1) return;
+
+    const { removedCurrent, nextIndex } = get().removeBySongIds([song.id]);
+    if (removedCurrent) {
+      if (nextIndex !== null) {
+        try {
+          await get().playSongAtIndex(nextIndex);
+        } catch (error) {
+          console.error('Failed to play next after removal:', error);
+        }
+      } else {
+        await usePlayerStore.getState().cleanup();
+      }
+    }
   },
 
   reorderQueue: (from: number, to: number) => {
@@ -296,5 +388,15 @@ if (typeof window !== 'undefined') {
       lastIndex = state.currentIndex;
       saveQueueState(state.queue, state.currentIndex);
     }
+  });
+
+  window.addEventListener('audio-file-missing', (event) => {
+    const detail = (event as CustomEvent<{ songId: number }>).detail;
+    if (!detail?.songId) return;
+    const song = useQueueStore.getState().queue.find((s) => s.id === detail.songId);
+    if (!song) return;
+    useQueueStore.getState().handleMissingSong(song).catch((error) => {
+      console.error('Failed to recover from missing song:', error);
+    });
   });
 }

@@ -273,8 +273,13 @@ pub async fn update_folder_order(folder_ids: Vec<i64>) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RemovedFolderSongs {
+    pub removed_song_ids: Vec<i64>,
+}
+
 #[tauri::command]
-pub async fn remove_folder(folder_id: i64) -> Result<(), String> {
+pub async fn remove_folder(folder_id: i64) -> Result<RemovedFolderSongs, String> {
     let conn = get_connection().map_err(|e| e.to_string())?;
     
     // 폴더 경로 가져오기
@@ -289,6 +294,20 @@ pub async fn remove_folder(folder_id: i64) -> Result<(), String> {
     // 폴더 경로 정규화 (Windows 경로 처리)
     let normalized_path = folder_path.replace("\\", "/");
     
+    // 삭제 대상 노래 id 목록 확보
+    let mut removed_song_ids: Vec<i64> = Vec::new();
+    {
+        let mut stmt = conn
+            .prepare("SELECT id FROM songs WHERE REPLACE(file_path, '\\', '/') LIKE ?1 || '%'")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([&format!("{}%", normalized_path)], |row| row.get(0))
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            removed_song_ids.push(row.map_err(|e| e.to_string())?);
+        }
+    }
+
     // 해당 폴더 경로로 시작하는 모든 노래 삭제
     conn.execute(
         "DELETE FROM songs WHERE REPLACE(file_path, '\\', '/') LIKE ?1 || '%'",
@@ -300,7 +319,7 @@ pub async fn remove_folder(folder_id: i64) -> Result<(), String> {
     conn.execute("DELETE FROM folders WHERE id = ?1", params![folder_id])
         .map_err(|e| e.to_string())?;
     
-    Ok(())
+    Ok(RemovedFolderSongs { removed_song_ids })
 }
 
 

@@ -2,6 +2,11 @@ import { create } from 'zustand';
 import { Song } from '../types';
 import { invoke } from '@tauri-apps/api/tauri';
 
+const isFileMissingError = (error: unknown) => {
+  const message = String(error ?? '');
+  return /not found|no such file|os error 2/i.test(message);
+};
+
 interface PlayerStore {
   // 재생 상태
   isPlaying: boolean;
@@ -67,6 +72,13 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         set({ isPlaying: true });
       } catch (playErr) {
         console.error('Failed to play audio:', playErr);
+        if (isFileMissingError(playErr) && typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('audio-file-missing', {
+              detail: { songId: song.id },
+            })
+          );
+        }
         set({ isPlaying: false, isLoadingWaveform: false });
         throw playErr;
       }
