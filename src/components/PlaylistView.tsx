@@ -14,6 +14,7 @@ import { Input } from './ui/input';
 import { SongContextMenu } from './SongContextMenu';
 import { PlaylistSelectModal } from './PlaylistSelectModal';
 import { MetadataModal } from './MetadataModal';
+import { TagModal } from './TagModal';
 import { AlbumArtImage } from './AlbumArtImage';
 
 const formatDuration = (seconds: number | null): string => {
@@ -96,6 +97,8 @@ export const PlaylistView = () => {
   } | null>(null);
   const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false);
   const [selectedSongForMetadata, setSelectedSongForMetadata] = useState<Song | null>(null);
+  const [isTagModalOpen, setIsTagModalOpen] = useState(false);
+  const [selectedSongForTags, setSelectedSongForTags] = useState<Song | null>(null);
   
   // ?뚮젅?대━?ㅽ듃 ?좏깮 紐⑤떖
   const [isPlaylistSelectModalOpen, setIsPlaylistSelectModalOpen] = useState(false);
@@ -507,6 +510,11 @@ export const PlaylistView = () => {
     setSelectedSongForMetadata(song);
     setIsMetadataModalOpen(true);
   };
+
+  const handleEditTags = (song: Song) => {
+    setSelectedSongForTags(song);
+    setIsTagModalOpen(true);
+  };
   
   const handleMetadataSave = async (payload: {
     title: string;
@@ -545,6 +553,26 @@ export const PlaylistView = () => {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       showToast(errorMessage || "메타데이터 저장에 실패했습니다.");
+      await refreshCurrentList();
+      throw error;
+    }
+  };
+
+  const handleTagSave = async (tags: string[]) => {
+    if (!selectedSongForTags) return;
+
+    try {
+      const updatedSong = await invoke<Song>('update_song_tags', {
+        payload: {
+          songId: selectedSongForTags.id,
+          tags,
+        },
+      });
+      updateSong(updatedSong);
+      showToast('태그가 저장되었습니다.');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      showToast(errorMessage || '태그 저장에 실패했습니다.');
       await refreshCurrentList();
       throw error;
     }
@@ -984,6 +1012,7 @@ export const PlaylistView = () => {
           onAddToPlaylist={selectedPlaylistId === null ? handleAddToPlaylist : undefined}
           onRemoveFromPlaylist={selectedPlaylistId !== null ? handleRemoveFromPlaylist : undefined}
           onEditMetadata={handleEditMetadata}
+          onEditTags={handleEditTags}
         />
       )}
       
@@ -1004,6 +1033,16 @@ export const PlaylistView = () => {
         onClose={() => {
           setIsMetadataModalOpen(false);
           setSelectedSongForMetadata(null);
+        }}
+      />
+
+      <TagModal
+        isOpen={isTagModalOpen}
+        song={selectedSongForTags}
+        onSave={handleTagSave}
+        onClose={() => {
+          setIsTagModalOpen(false);
+          setSelectedSongForTags(null);
         }}
       />
     </div>

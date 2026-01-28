@@ -12,6 +12,7 @@ export interface Song {
   waveform_data: string | null; // JSON 배열로 저장된 웨이폼 데이터
   created_at: string;
   updated_at: string;
+  tags: string[];
 }
 
 // Tag types
@@ -43,4 +44,3 @@ export interface Playlist {
   created_at: string;
   updated_at: string;
 }
-

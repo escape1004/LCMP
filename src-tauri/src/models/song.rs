@@ -14,6 +14,7 @@ pub struct Song {
     pub waveform_data: Option<String>, // JSON 배열로 저장된 웨이폼 데이터
     pub created_at: String,
     pub updated_at: String,
+    pub tags: Vec<String>,
 }
 
 impl Song {
@@ -34,7 +35,7 @@ impl Song {
             waveform_data,
             created_at: row.get(9)?,
             updated_at: row.get(10)?,
+            tags: Vec::new(),
         })
     }
 }
-

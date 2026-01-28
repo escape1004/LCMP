@@ -95,6 +95,7 @@ export const MetadataModal = ({ isOpen, song, onClose, onSave }: MetadataModalPr
     return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
   };
 
+
   const handleSave = async () => {
     try {
       await onSave?.({
@@ -460,3 +461,6 @@ export const MetadataModal = ({ isOpen, song, onClose, onSave }: MetadataModalPr
     </div>
   );
 };
+
+
+

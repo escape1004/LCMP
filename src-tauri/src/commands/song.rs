@@ -53,6 +53,14 @@ pub struct UpdateSongMetadataPayload {
     pub publisher: Option<String>,
     pub subtitle: Option<String>,
     pub grouping: Option<String>,
+    pub tags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSongTagsPayload {
+    pub song_id: i64,
+    pub tags: Vec<String>,
 }
 
 fn normalize_optional_string(value: Option<String>) -> Option<String> {
@@ -66,7 +74,88 @@ fn normalize_optional_string(value: Option<String>) -> Option<String> {
     })
 }
 
-type ExtractedMeta = (Option<String>, Option<String>, Option<String>, Option<i32>, Option<String>, Option<f64>);
+pub(crate) fn normalize_tags(tags: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut result = Vec::new();
+    for tag in tags {
+        let trimmed = tag.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let key = trimmed.to_lowercase();
+        if seen.insert(key) {
+            result.push(trimmed.to_string());
+        }
+    }
+    result
+}
+
+fn fetch_song_tags(conn: &rusqlite::Connection, song_id: i64) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT t.name
+         FROM tags t
+         INNER JOIN song_tags st ON st.tag_id = t.id
+         WHERE st.song_id = ?1
+         ORDER BY t.name COLLATE NOCASE ASC",
+    )?;
+    let rows = stmt.query_map([song_id], |row| row.get(0))?;
+    let mut tags = Vec::new();
+    for tag in rows {
+        tags.push(tag?);
+    }
+    Ok(tags)
+}
+
+pub(crate) fn set_song_tags(conn: &rusqlite::Connection, song_id: i64, tags: Vec<String>) -> Result<()> {
+    conn.execute("DELETE FROM song_tags WHERE song_id = ?1", [song_id])?;
+    if tags.is_empty() {
+        conn.execute("DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM song_tags)", [])?;
+        return Ok(());
+    }
+    for tag_name in tags {
+        conn.execute(
+            "INSERT OR IGNORE INTO tags (name) VALUES (?1)",
+            [&tag_name],
+        )?;
+        let tag_id: i64 = conn.query_row(
+            "SELECT id FROM tags WHERE name = ?1",
+            [&tag_name],
+            |row| row.get(0),
+        )?;
+        conn.execute(
+            "INSERT OR IGNORE INTO song_tags (song_id, tag_id) VALUES (?1, ?2)",
+            params![song_id, tag_id],
+        )?;
+    }
+    conn.execute("DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM song_tags)", [])?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_all_tags() -> Result<Vec<String>, String> {
+    let conn = get_connection().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare("SELECT name FROM tags ORDER BY name COLLATE NOCASE ASC")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| row.get(0))
+        .map_err(|e| e.to_string())?;
+    let mut tags = Vec::new();
+    for tag in rows {
+        tags.push(tag.map_err(|e| e.to_string())?);
+    }
+    Ok(tags)
+}
+
+type ExtractedMeta = (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<i32>,
+    Option<String>,
+    Option<f64>,
+    Vec<String>,
+);
 
 static METADATA_CACHE: OnceLock<Mutex<HashMap<String, (u64, ExtractedMeta)>>> = OnceLock::new();
 
@@ -81,13 +170,13 @@ fn get_file_mtime_seconds(file_path: &str) -> Option<u64> {
     Some(duration.as_secs())
 }
 
-fn merge_file_metadata(song: &mut Song) {
+fn merge_file_metadata(song: &mut Song) -> Vec<String> {
     if !Path::new(&song.file_path).exists() {
-        return;
+        return Vec::new();
     }
     let mtime = match get_file_mtime_seconds(&song.file_path) {
         Some(value) => value,
-        None => return,
+        None => return Vec::new(),
     };
 
     let cached = {
@@ -95,7 +184,7 @@ fn merge_file_metadata(song: &mut Song) {
         cache.and_then(|map| map.get(&song.file_path).cloned())
     };
 
-    let (title, artist, album, year, genre, duration) = if let Some((cached_mtime, cached_meta)) = cached {
+    let (title, artist, album, year, genre, duration, tags) = if let Some((cached_mtime, cached_meta)) = cached {
         if cached_mtime == mtime {
             cached_meta
         } else {
@@ -106,7 +195,7 @@ fn merge_file_metadata(song: &mut Song) {
                 }
                 meta
             } else {
-                return;
+                return Vec::new();
             }
         }
     } else {
@@ -117,7 +206,7 @@ fn merge_file_metadata(song: &mut Song) {
             }
             meta
         } else {
-            return;
+            return Vec::new();
         }
     };
 
@@ -139,6 +228,7 @@ fn merge_file_metadata(song: &mut Song) {
     if duration.is_some() {
         song.duration = duration;
     }
+    tags
 }
 
 fn guess_mime_type(path: &str) -> Option<&'static str> {
@@ -178,8 +268,9 @@ fn update_mp3_metadata(
     publisher: &Option<String>,
     subtitle: &Option<String>,
     grouping: &Option<String>,
+    tags: &Option<Vec<String>>,
 ) -> Result<(), String> {
-    use id3::frame::{Comment, Picture, PictureType, Content, Frame};
+    use id3::frame::{Comment, Picture, PictureType, Content, Frame, ExtendedText};
     use id3::Tag;
     
     let mut tag = Tag::read_from_path(file_path).unwrap_or_else(|_| Tag::new());
@@ -260,6 +351,32 @@ fn update_mp3_metadata(
     set_text_frame(&mut tag, "TPUB", publisher);
     set_text_frame(&mut tag, "TIT3", subtitle);
     set_text_frame(&mut tag, "TIT1", grouping);
+
+    let existing_ext: Vec<(String, String)> = tag
+        .extended_texts()
+        .filter(|text| text.description != "LCMP_TAGS")
+        .map(|text| (text.description.to_string(), text.value.to_string()))
+        .collect();
+    tag.remove("TXXX");
+    for (description, value) in existing_ext {
+        tag.add_frame(Frame::with_content(
+            "TXXX",
+            Content::ExtendedText(ExtendedText { description, value }),
+        ));
+    }
+    if let Some(values) = tags {
+        if values.is_empty() {
+            // keep cleared
+        } else if let Ok(json) = serde_json::to_string(values) {
+            tag.add_frame(Frame::with_content(
+                "TXXX",
+                Content::ExtendedText(ExtendedText {
+                    description: "LCMP_TAGS".to_string(),
+                    value: json,
+                }),
+            ));
+        }
+    }
     
     tag.remove("USLT");
     
@@ -281,6 +398,41 @@ fn update_mp3_metadata(
     tag.write_to_path(file_path, id3::Version::Id3v24)
         .map_err(|e| format!("Failed to write ID3 tag: {}", e))?;
     
+    Ok(())
+}
+
+fn update_mp3_tags_only(file_path: &str, tags: &[String]) -> Result<(), String> {
+    use id3::frame::{Content, ExtendedText, Frame};
+    use id3::Tag;
+
+    let mut tag = Tag::read_from_path(file_path).unwrap_or_else(|_| Tag::new());
+
+    let existing_ext: Vec<(String, String)> = tag
+        .extended_texts()
+        .filter(|text| text.description != "LCMP_TAGS")
+        .map(|text| (text.description.to_string(), text.value.to_string()))
+        .collect();
+    tag.remove("TXXX");
+    for (description, value) in existing_ext {
+        tag.add_frame(Frame::with_content(
+            "TXXX",
+            Content::ExtendedText(ExtendedText { description, value }),
+        ));
+    }
+    if !tags.is_empty() {
+        let json = serde_json::to_string(tags).map_err(|e| e.to_string())?;
+        tag.add_frame(Frame::with_content(
+            "TXXX",
+            Content::ExtendedText(ExtendedText {
+                description: "LCMP_TAGS".to_string(),
+                value: json,
+            }),
+        ));
+    }
+
+    tag.write_to_path(file_path, id3::Version::Id3v24)
+        .map_err(|e| format!("Failed to write ID3 tag: {}", e))?;
+
     Ok(())
 }
 
@@ -306,6 +458,7 @@ fn update_flac_metadata(
     publisher: &Option<String>,
     subtitle: &Option<String>,
     grouping: &Option<String>,
+    tags: &Option<Vec<String>>,
 ) -> Result<(), String> {
     use metaflac::block::PictureType as FlacPictureType;
     
@@ -428,6 +581,14 @@ fn update_flac_metadata(
         } else {
             vorbis.comments.remove("GROUPING");
         }
+
+        if let Some(values) = tags {
+            if values.is_empty() {
+                vorbis.comments.remove("LCMP_TAGS");
+            } else if let Ok(json) = serde_json::to_string(values) {
+                vorbis.comments.insert("LCMP_TAGS".to_string(), vec![json]);
+            }
+        }
     }
     
     if let Some(cover_path) = album_art_path.as_deref() {
@@ -443,6 +604,23 @@ fn update_flac_metadata(
     tag.write_to_path(file_path)
         .map_err(|e| format!("Failed to write FLAC tag: {}", e))?;
     
+    Ok(())
+}
+
+fn update_flac_tags_only(file_path: &str, tags: &[String]) -> Result<(), String> {
+    let mut tag = metaflac::Tag::read_from_path(file_path)
+        .map_err(|e| format!("Failed to read FLAC tag: {}", e))?;
+    {
+        let vorbis = tag.vorbis_comments_mut();
+        if tags.is_empty() {
+            vorbis.comments.remove("LCMP_TAGS");
+        } else {
+            let json = serde_json::to_string(tags).map_err(|e| e.to_string())?;
+            vorbis.comments.insert("LCMP_TAGS".to_string(), vec![json]);
+        }
+    }
+    tag.write_to_path(file_path)
+        .map_err(|e| format!("Failed to write FLAC tag: {}", e))?;
     Ok(())
 }
 
@@ -829,7 +1007,16 @@ pub async fn get_songs_by_folder(folder_id: i64) -> Result<SongList, String> {
     let mut songs = Vec::new();
     for song in song_iter {
         let mut song = song.map_err(|e| e.to_string())?;
-        merge_file_metadata(&mut song);
+        let file_tags = merge_file_metadata(&mut song);
+        let db_tags = fetch_song_tags(&conn, song.id).unwrap_or_default();
+        if !db_tags.is_empty() {
+            song.tags = db_tags;
+        } else if !file_tags.is_empty() {
+            song.tags = file_tags.clone();
+            let _ = set_song_tags(&conn, song.id, file_tags);
+        } else {
+            song.tags = Vec::new();
+        }
         songs.push(song);
     }
     
@@ -858,7 +1045,16 @@ pub async fn get_songs_by_playlist(playlist_id: i64) -> Result<SongList, String>
     let mut songs = Vec::new();
     for song in song_iter {
         let mut song = song.map_err(|e| e.to_string())?;
-        merge_file_metadata(&mut song);
+        let file_tags = merge_file_metadata(&mut song);
+        let db_tags = fetch_song_tags(&conn, song.id).unwrap_or_default();
+        if !db_tags.is_empty() {
+            song.tags = db_tags;
+        } else if !file_tags.is_empty() {
+            song.tags = file_tags.clone();
+            let _ = set_song_tags(&conn, song.id, file_tags);
+        } else {
+            song.tags = Vec::new();
+        }
         songs.push(song);
     }
     
@@ -884,7 +1080,16 @@ pub async fn get_all_songs() -> Result<SongList, String> {
     let mut songs = Vec::new();
     for song in song_iter {
         let mut song = song.map_err(|e| e.to_string())?;
-        merge_file_metadata(&mut song);
+        let file_tags = merge_file_metadata(&mut song);
+        let db_tags = fetch_song_tags(&conn, song.id).unwrap_or_default();
+        if !db_tags.is_empty() {
+            song.tags = db_tags;
+        } else if !file_tags.is_empty() {
+            song.tags = file_tags.clone();
+            let _ = set_song_tags(&conn, song.id, file_tags);
+        } else {
+            song.tags = Vec::new();
+        }
         songs.push(song);
     }
     
@@ -930,7 +1135,16 @@ pub async fn get_song_by_id(song_id: i64) -> Result<Song, String> {
     let mut song = stmt
         .query_row([song_id], |row| Song::from_row(row))
         .map_err(|e| e.to_string())?;
-    merge_file_metadata(&mut song);
+    let file_tags = merge_file_metadata(&mut song);
+    let db_tags = fetch_song_tags(&conn, song.id).unwrap_or_default();
+    if !db_tags.is_empty() {
+        song.tags = db_tags;
+    } else if !file_tags.is_empty() {
+        song.tags = file_tags.clone();
+        let _ = set_song_tags(&conn, song.id, file_tags);
+    } else {
+        song.tags = Vec::new();
+    }
     
     Ok(song)
 }
@@ -967,6 +1181,7 @@ pub async fn update_song_metadata(payload: UpdateSongMetadataPayload) -> Result<
     let publisher = normalize_optional_string(payload.publisher);
     let subtitle = normalize_optional_string(payload.subtitle);
     let grouping = normalize_optional_string(payload.grouping);
+    let normalized_tags = payload.tags.map(normalize_tags);
     
     let extension = Path::new(&file_path)
         .extension()
@@ -1006,6 +1221,7 @@ pub async fn update_song_metadata(payload: UpdateSongMetadataPayload) -> Result<
                 &publisher,
                 &subtitle,
                 &grouping,
+                &normalized_tags,
             )?;
         }
         "flac" => {
@@ -1031,6 +1247,7 @@ pub async fn update_song_metadata(payload: UpdateSongMetadataPayload) -> Result<
                 &publisher,
                 &subtitle,
                 &grouping,
+                &normalized_tags,
             )?;
         }
         _ => {}
@@ -1051,6 +1268,11 @@ pub async fn update_song_metadata(payload: UpdateSongMetadataPayload) -> Result<
         ],
     )
     .map_err(|e| format!("Failed to update song metadata: {}", e))?;
+
+    if let Some(tags) = normalized_tags {
+        set_song_tags(&conn, payload.song_id, tags)
+            .map_err(|e| format!("Failed to update song tags: {}", e))?;
+    }
     
     let mut stmt = conn
         .prepare(
@@ -1060,9 +1282,86 @@ pub async fn update_song_metadata(payload: UpdateSongMetadataPayload) -> Result<
         )
         .map_err(|e| e.to_string())?;
     
-    let song = stmt
+    let mut song = stmt
         .query_row([payload.song_id], |row| Song::from_row(row))
         .map_err(|e| e.to_string())?;
+    let file_tags = merge_file_metadata(&mut song);
+    let db_tags = fetch_song_tags(&conn, song.id).unwrap_or_default();
+    if !db_tags.is_empty() {
+        song.tags = db_tags;
+    } else if !file_tags.is_empty() {
+        song.tags = file_tags.clone();
+        let _ = set_song_tags(&conn, song.id, file_tags);
+    } else {
+        song.tags = Vec::new();
+    }
     
+    Ok(song)
+}
+
+#[tauri::command]
+pub async fn update_song_tags(payload: UpdateSongTagsPayload) -> Result<Song, String> {
+    let conn = get_connection().map_err(|e| e.to_string())?;
+
+    let file_path: String = conn
+        .query_row(
+            "SELECT file_path FROM songs WHERE id = ?1",
+            [payload.song_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Failed to load song path: {}", e))?;
+
+    if !Path::new(&file_path).exists() {
+        return Err("?뚯씪??議댁옱?섏? ?딆뒿?덈떎.".to_string());
+    }
+
+    let normalized = normalize_tags(payload.tags);
+
+    let extension = Path::new(&file_path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|s| s.to_lowercase());
+    let ext = extension.as_deref().unwrap_or("");
+    match ext {
+        "mp3" => {
+            update_mp3_tags_only(&file_path, &normalized)?;
+        }
+        "flac" => {
+            update_flac_tags_only(&file_path, &normalized)?;
+        }
+        _ => {
+            return Err(format!(
+                "吏?먰븯吏 ?딅뒗 ?뚯씪 ?뺤옣?먯엯?덈떎. ?뚯씪 硫뷀??곗씠????μ? mp3/flac留?吏?먰빀?덈떎. (?꾩옱: {})",
+                if ext.is_empty() { "?????놁쓬" } else { ext }
+            ));
+        }
+    }
+
+    set_song_tags(&conn, payload.song_id, normalized)
+        .map_err(|e| format!("Failed to update song tags: {}", e))?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, file_path, title, artist, album, duration, year, genre, album_art_path, created_at, updated_at, waveform_data 
+             FROM songs 
+             WHERE id = ?1"
+        )
+        .map_err(|e| e.to_string())?;
+
+    let mut song = stmt
+        .query_row([payload.song_id], |row| Song::from_row(row))
+        .map_err(|e| e.to_string())?;
+
+    let file_tags = merge_file_metadata(&mut song);
+    let db_tags = fetch_song_tags(&conn, song.id).unwrap_or_default();
+    if !db_tags.is_empty() {
+        song.tags = db_tags;
+    } else if !file_tags.is_empty() {
+        song.tags = file_tags.clone();
+        let _ = set_song_tags(&conn, song.id, file_tags);
+    } else {
+        song.tags = Vec::new();
+    }
+
     Ok(song)
 }

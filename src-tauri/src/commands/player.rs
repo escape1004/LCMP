@@ -20,6 +20,7 @@ use cpal::Sample;
 use rubato::{Resampler, SincFixedIn, SincInterpolationType, SincInterpolationParameters, WindowFunction};
 use crate::database::get_connection;
 use tauri::Manager;
+use serde_json;
 
 #[derive(Clone, Serialize)]
 struct PlaybackFinishedPayload {
@@ -131,7 +132,7 @@ pub async fn get_audio_duration(file_path: String) -> Result<f64, String> {
 }
 
 // 메타데이터 추출 함수
-pub fn extract_metadata(file_path: &str) -> Result<(Option<String>, Option<String>, Option<String>, Option<i32>, Option<String>, Option<f64>), String> {
+pub fn extract_metadata(file_path: &str) -> Result<(Option<String>, Option<String>, Option<String>, Option<i32>, Option<String>, Option<f64>, Vec<String>), String> {
     let file = File::open(file_path)
         .map_err(|e| format!("Failed to open file: {}", e))?;
     
@@ -156,6 +157,19 @@ pub fn extract_metadata(file_path: &str) -> Result<(Option<String>, Option<Strin
     let mut year = None;
     let mut genre = None;
     let mut duration = None;
+    let mut tags: Vec<String> = Vec::new();
+    const TAG_KEY: &str = "LCMP_TAGS";
+
+    let parse_tags_value = |value: &str| -> Vec<String> {
+        if let Ok(parsed) = serde_json::from_str::<Vec<String>>(value) {
+            return parsed;
+        }
+        value
+            .split(',')
+            .map(|tag| tag.trim().to_string())
+            .filter(|tag| !tag.is_empty())
+            .collect()
+    };
     
     // 메타데이터 추출 (파일 확장자에 따라 적절한 라이브러리 사용)
     let extension = std::path::Path::new(file_path)
@@ -167,6 +181,9 @@ pub fn extract_metadata(file_path: &str) -> Result<(Option<String>, Option<Strin
         Some("mp3") => {
             // MP3 파일: id3 라이브러리 사용
             if let Ok(tag) = id3::Tag::read_from_path(file_path) {
+                if let Some(ext) = tag.extended_texts().find(|t| t.description == TAG_KEY) {
+                    tags = parse_tags_value(&ext.value);
+                }
                 // ID3 프레임을 순회하며 메타데이터 추출
                 for frame in tag.frames() {
                     let frame_id = frame.id();
@@ -221,6 +238,11 @@ pub fn extract_metadata(file_path: &str) -> Result<(Option<String>, Option<Strin
             // FLAC 파일: metaflac 라이브러리 사용
             if let Ok(tag) = metaflac::Tag::read_from_path(file_path) {
                 if let Some(vorbis_comments) = tag.vorbis_comments() {
+                    if let Some(values) = vorbis_comments.get(TAG_KEY) {
+                        if let Some(first) = values.first() {
+                            tags = parse_tags_value(first);
+                        }
+                    }
                     if let Some(t) = vorbis_comments.title() {
                         if let Some(first) = t.first() {
                             title = Some(first.to_string());
@@ -272,7 +294,7 @@ pub fn extract_metadata(file_path: &str) -> Result<(Option<String>, Option<Strin
         }
     }
     
-    Ok((title, artist, album, year, genre, duration))
+    Ok((title, artist, album, year, genre, duration, tags))
 }
 
 #[tauri::command]

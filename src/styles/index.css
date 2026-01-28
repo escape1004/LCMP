@@ -212,6 +212,18 @@
     outline: none !important;
   }
 
+  /* Tag input focus ring removal */
+  .tag-input:focus,
+  .tag-input:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  .tag-input-wrapper:focus-within {
+    outline: 2px solid #5865f2;
+    outline-offset: 2px;
+  }
+
   /* 토스트 애니메이션 */
   @keyframes toastSlideIn {
     from {

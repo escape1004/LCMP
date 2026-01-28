@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+﻿import { useEffect, useRef } from 'react';
 import { Song } from '../types';
 
 interface SongContextMenuProps {
@@ -10,6 +10,7 @@ interface SongContextMenuProps {
   onAddToPlaylist?: (song: Song) => void;
   onRemoveFromPlaylist?: (song: Song) => void;
   onEditMetadata: (song: Song) => void;
+  onEditTags: (song: Song) => void;
 }
 
 export const SongContextMenu = ({
@@ -21,6 +22,7 @@ export const SongContextMenu = ({
   onAddToPlaylist,
   onRemoveFromPlaylist,
   onEditMetadata,
+  onEditTags,
 }: SongContextMenuProps) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -57,7 +59,7 @@ export const SongContextMenu = ({
     let adjustedX = x;
     let adjustedY = y;
 
-    // 우측 경계 체크
+    // 오른쪽 경계 체크
     if (x + rect.width > viewportWidth) {
       adjustedX = viewportWidth - rect.width - 8;
     }
@@ -67,7 +69,7 @@ export const SongContextMenu = ({
       adjustedY = viewportHeight - rect.height - 8;
     }
 
-    // 좌측 경계 체크
+    // 왼쪽 경계 체크
     if (adjustedX < 8) {
       adjustedX = 8;
     }
@@ -107,7 +109,7 @@ export const SongContextMenu = ({
           }}
           className="block w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-hover transition-colors whitespace-nowrap"
         >
-          플레이리스트에서 삭제
+          플레이리스트에서 제거
         </button>
       ) : onAddToPlaylist ? (
         <button
@@ -122,11 +124,10 @@ export const SongContextMenu = ({
       ) : null}
       <button
         onClick={() => {
-          // 추후 개발 예정
+          onEditTags(song);
           onClose();
         }}
-        className="w-full px-3 py-2 text-left text-sm text-text-muted hover:bg-hover transition-colors whitespace-nowrap"
-        disabled
+        className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-hover transition-colors whitespace-nowrap"
       >
         태그 추가
       </button>
@@ -143,3 +144,4 @@ export const SongContextMenu = ({
     </div>
   );
 };
+
