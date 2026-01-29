@@ -197,6 +197,7 @@ export const MetadataModal = ({ isOpen, song, onClose, onSave }: MetadataModalPr
                       path={albumArtPath}
                       alt="Album Art"
                       className="w-full h-full object-cover"
+                      preferPath
                       fallback={<span className="text-text-muted text-sm">이미지 선택</span>}
                     />
                   ) : (

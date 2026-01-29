@@ -40,6 +40,11 @@
       },
       "path": {
         "all": true
+      },
+      "protocol": {
+        "all": false,
+        "asset": true,
+        "assetScope": ["**"]
       }
     },
     "bundle": {

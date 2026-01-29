@@ -20,11 +20,11 @@ const normalizePath = (value: string) => {
 export const toFileSrc = (path?: string | null) => {
   if (!path) return null;
   const normalized = normalizePath(path);
-  if (schemeRegex.test(normalized) && !normalized.toLowerCase().startsWith("file:")) {
-    return normalized;
-  }
   if (windowsPathRegex.test(normalized) || normalized.startsWith("//")) {
     return convertFileSrc(normalized);
+  }
+  if (schemeRegex.test(normalized) && !normalized.toLowerCase().startsWith("file:")) {
+    return normalized;
   }
   return convertFileSrc(normalized);
 };

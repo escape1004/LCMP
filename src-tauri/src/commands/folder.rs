@@ -72,7 +72,7 @@ pub async fn add_folder(path: String, name: Option<String>) -> Result<Folder, St
 // song.rs에서도 사용하므로 pub(crate)로 공개
 pub(crate) fn scan_folder_for_songs(conn: &rusqlite::Connection, folder_path: &str) -> Result<(), String> {
     // 지원 가능한 오디오 확장자
-    let audio_extensions = ["mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "wma", "mp4", "m4v"];
+    let audio_extensions = ["mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "wma"];
     
     let walker = WalkDir::new(folder_path).into_iter();
     

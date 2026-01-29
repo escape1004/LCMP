@@ -284,3 +284,44 @@
     border-radius: 0.5rem;
   }
 }
+input.discord-slider[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: #2f3136;
+  outline: none;
+}
+
+input.discord-slider[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+input.discord-slider[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #f2f3f5;
+  border: 2px solid #5865f2;
+  box-shadow: 0 0 0 2px rgba(88, 101, 242, 0.15);
+  margin-top: -4px;
+}
+
+input.discord-slider[type='range']::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+input.discord-slider[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #f2f3f5;
+  border: 2px solid #5865f2;
+  box-shadow: 0 0 0 2px rgba(88, 101, 242, 0.15);
+}

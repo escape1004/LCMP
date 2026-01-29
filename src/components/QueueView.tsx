@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+﻿import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
-import { exists } from "@tauri-apps/api/fs";
 import { useQueueStore } from "../stores/queueStore";
 import { usePlayerStore } from "../stores/playerStore";
 import { usePlaylistStore } from "../stores/playlistStore";
@@ -21,9 +20,23 @@ type VideoSync = {
   delayMs: number;
 };
 
+const normalizeFsPath = (value: string) => {
+  let result = value.trim();
+  if (result.toLowerCase().startsWith("file://")) {
+    result = decodeURIComponent(result.replace(/^file:\/*/i, ""));
+  }
+  if (result.startsWith("\\\\?\\")) {
+    result = result.slice(4);
+    if (result.startsWith("UNC\\")) {
+      result = `\\\\${result.slice(4)}`;
+    }
+  }
+  return result;
+};
+
 export const QueueView = () => {
   const { queue, currentIndex, playSongAtIndex, removeFromQueue } = useQueueStore();
-  const { currentTime, isPlaying } = usePlayerStore();
+  const { currentTime, isPlaying, togglePlayPause } = usePlayerStore();
   const { playlists } = usePlaylistStore();
   const { updateSong, refreshCurrentList } = useSongStore();
   const { showToast } = useToastStore();
@@ -38,6 +51,12 @@ export const QueueView = () => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const syncTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const saveDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncSliderRef = useRef<HTMLInputElement | null>(null);
+  const [syncTooltip, setSyncTooltip] = useState<{ visible: boolean; left: number }>({
+    visible: false,
+    left: 0,
+  });
+  const syncPercent = Math.round(((syncOffsetMs + 10000) / 20000) * 100);
 
   const [contextMenu, setContextMenu] = useState<{
     song: Song;
@@ -52,7 +71,7 @@ export const QueueView = () => {
   const [isPlaylistSelectModalOpen, setIsPlaylistSelectModalOpen] = useState(false);
   const [selectedSongForPlaylist, setSelectedSongForPlaylist] = useState<Song | null>(null);
 
-  const videoSrc = useMemo(() => toFileSrc(videoPath), [videoPath]);
+  const videoSrc = useMemo(() => (videoPath ? toFileSrc(normalizeFsPath(videoPath)) : null), [videoPath]);
 
   const handleSongClick = async (index: number) => {
     await playSongAtIndex(index);
@@ -173,17 +192,9 @@ export const QueueView = () => {
         return;
       }
 
-      const existsOnDisk = await exists(data.videoPath);
-      if (!existsOnDisk) {
-        setVideoPath(null);
-        setSyncOffsetMs(0);
-        setMediaMode("cover");
-        setVideoError("연결된 동영상을 찾을 수 없습니다.");
-        return;
-      }
-
       setVideoPath(data.videoPath);
       setSyncOffsetMs(data.delayMs ?? 0);
+      setVideoError(null);
     } catch (error) {
       console.error("Failed to load video sync:", error);
       setVideoPath(null);
@@ -222,6 +233,12 @@ export const QueueView = () => {
     if (!videoPath) return;
     videoRef.current.muted = true;
   }, [videoPath]);
+
+  useEffect(() => {
+    if (mediaMode !== "video") return;
+    if (!videoRef.current || !videoSrc) return;
+    videoRef.current.load();
+  }, [mediaMode, videoSrc]);
 
   useEffect(() => {
     if (!videoRef.current || !isVideoReady || !videoPath) return;
@@ -290,7 +307,7 @@ export const QueueView = () => {
 
   return (
     <div className="h-full w-full flex overflow-hidden bg-bg-primary">
-      {/* 좌측: 앨범 커버/영상 */}
+      {/* 좌측: 앨범 커버/동영상 */}
       <div className="flex-1 flex flex-col items-center justify-center bg-bg-primary h-full gap-4">
         <div className="flex items-center gap-2">
           <button
@@ -307,7 +324,11 @@ export const QueueView = () => {
           </button>
           <button
             type="button"
-            onClick={() => videoPath && setMediaMode("video")}
+            onClick={() => {
+              if (!videoPath) return;
+              setMediaMode("video");
+              setIsVideoLoading(true);
+            }}
             disabled={!videoPath}
             className={`h-8 px-3 rounded-md border text-xs transition-colors flex items-center gap-2 ${
               mediaMode === "video"
@@ -320,29 +341,52 @@ export const QueueView = () => {
           </button>
         </div>
 
-        <div className="w-[60vh] max-w-[70%] max-h-[70%] aspect-square bg-hover rounded-lg flex items-center justify-center shadow-lg overflow-hidden relative">
-          {mediaMode === "video" && videoSrc ? (
+        <div
+          className={`w-[60vh] max-w-[70%] rounded-lg flex items-center justify-center shadow-lg overflow-hidden relative ${
+            mediaMode === "video" ? "bg-transparent" : "bg-hover"
+          }`}
+        >
+          {mediaMode === "video" ? (
             <>
-              <video
-                ref={videoRef}
-                src={videoSrc}
-                className="w-full h-full object-cover"
-                muted
-                playsInline
-                onLoadStart={() => {
-                  setIsVideoLoading(true);
-                  setVideoError(null);
-                }}
-                onLoadedMetadata={() => setIsVideoReady(true)}
-                onCanPlay={() => setIsVideoLoading(false)}
-                onWaiting={() => setIsVideoLoading(true)}
-                onPlaying={() => setIsVideoLoading(false)}
-                onError={() => {
-                  setIsVideoLoading(false);
-                  setVideoError("동영상 재생에 실패했습니다.");
-                  setMediaMode("cover");
-                }}
-              />
+              {videoSrc ? (
+                <video
+                  ref={videoRef}
+                  src={videoSrc}
+                  className="w-full h-auto max-h-full object-contain"
+                  muted
+                  playsInline
+                  onClick={() => {
+                    togglePlayPause();
+                  }}
+                  onLoadStart={() => {
+                    setIsVideoLoading(true);
+                    setVideoError(null);
+                  }}
+                  onLoadedMetadata={() => {
+                    setIsVideoReady(true);
+                    setIsVideoLoading(false);
+                  }}
+                  onCanPlay={() => setIsVideoLoading(false)}
+                  onWaiting={() => setIsVideoLoading(true)}
+                  onPlaying={() => setIsVideoLoading(false)}
+                  onError={() => {
+                    setIsVideoLoading(false);
+                    const mediaError = videoRef.current?.error;
+                    console.error("Video playback error", {
+                      videoPath,
+                      videoSrc,
+                      error: mediaError,
+                      code: mediaError?.code,
+                      message: mediaError?.message,
+                    });
+                    setVideoError("동영상 재생에 실패했습니다.");
+                  }}
+                />
+              ) : (
+                <div className="absolute inset-0 bg-bg-primary/60 backdrop-blur-sm flex items-center justify-center text-sm text-text-muted">
+                  동영상 경로를 불러오지 못했습니다.
+                </div>
+              )}
               {(isVideoLoading || videoError) && (
                 <div className="absolute inset-0 bg-bg-primary/60 backdrop-blur-sm flex items-center justify-center text-sm text-text-muted">
                   {videoError ?? "동영상 로딩 중..."}
@@ -362,46 +406,73 @@ export const QueueView = () => {
           )}
         </div>
 
-        {videoPath && (
+        {videoPath && mediaMode === "video" && (
           <div className="w-[60vh] max-w-[70%]">
             <div className="flex items-center justify-between text-xs text-text-muted mb-2">
               <span>싱크 조절</span>
               <span>{(syncOffsetMs / 1000).toFixed(1)}s</span>
             </div>
-            <input
-              type="range"
-              min={-10000}
-              max={10000}
-              step={100}
-              value={syncOffsetMs}
-              onChange={(e) => setSyncOffsetMs(Number(e.target.value))}
-              className="w-full slider"
-            />
+            <div className="relative">
+              {syncTooltip.visible && (
+                <div
+                  className="absolute -top-7 px-2 py-1 rounded-md text-[11px] text-white bg-[#18191c] shadow-md whitespace-nowrap"
+                  style={{ left: `${syncTooltip.left}px`, transform: "translateX(-50%)" }}
+                >
+                  {(syncOffsetMs / 1000).toFixed(1)}s
+                </div>
+              )}
+              <input
+                ref={syncSliderRef}
+                type="range"
+                min={-10000}
+                max={10000}
+                step={100}
+                value={syncOffsetMs}
+                onChange={(e) => setSyncOffsetMs(Number(e.target.value))}
+                onMouseEnter={() =>
+                  setSyncTooltip((prev) => ({ ...prev, visible: true }))
+                }
+                onMouseLeave={() =>
+                  setSyncTooltip((prev) => ({ ...prev, visible: false }))
+                }
+                onMouseMove={(e) => {
+                  if (!syncSliderRef.current) return;
+                  const rect = syncSliderRef.current.getBoundingClientRect();
+                  const percent = (syncOffsetMs + 10000) / 20000;
+                  const left = rect.width * percent;
+                  setSyncTooltip({ visible: true, left });
+                }}
+                style={{
+                  background: `linear-gradient(90deg, #5865f2 ${syncPercent}%, #2f3136 ${syncPercent}%)`,
+                }}
+                className="w-full discord-slider cursor-pointer"
+              />
+            </div>
             <div className="flex items-center justify-between mt-2">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 rounded-md border border-border bg-[#2b2d31] p-1">
                 <button
                   type="button"
                   onClick={() => setSyncOffsetMs((prev) => Math.max(-10000, prev - 500))}
-                  className="px-2 py-1 text-xs rounded border border-border text-text-muted hover:text-text-primary transition-colors"
+                  className="px-2 py-1 text-[11px] rounded-sm text-text-muted hover:text-white hover:bg-[#3f4147] transition-colors"
                 >
                   -0.5s
                 </button>
                 <button
                   type="button"
                   onClick={() => setSyncOffsetMs(0)}
-                  className="px-2 py-1 text-xs rounded border border-border text-text-muted hover:text-text-primary transition-colors"
+                  className="px-2 py-1 text-[11px] rounded-sm text-text-muted hover:text-white hover:bg-[#3f4147] transition-colors"
                 >
                   초기화
                 </button>
                 <button
                   type="button"
                   onClick={() => setSyncOffsetMs((prev) => Math.min(10000, prev + 500))}
-                  className="px-2 py-1 text-xs rounded border border-border text-text-muted hover:text-text-primary transition-colors"
+                  className="px-2 py-1 text-[11px] rounded-sm text-text-muted hover:text-white hover:bg-[#3f4147] transition-colors"
                 >
                   +0.5s
                 </button>
               </div>
-              <div className="text-xs text-text-muted">범위: ±10.0s</div>
+              <div className="text-[11px] text-text-muted">범위: ±10.0s</div>
             </div>
           </div>
         )}
@@ -415,7 +486,7 @@ export const QueueView = () => {
             {queue.length === 0 ? (
               <div className="flex-1 flex items-center justify-center">
                 <div className="text-text-muted text-sm text-center">
-                  대기열이 비었습니다.
+                  대기열이 비어있습니다.
                 </div>
               </div>
             ) : (
@@ -430,7 +501,7 @@ export const QueueView = () => {
                   onClick={() => handleSongClick(index)}
                   onContextMenu={(e) => handleSongContextMenu(e, song, index)}
                 >
-                  {/* 앨범 커버 썸네일 */}
+                  {/* 앨범 커버 미리보기 */}
                   <div className="w-12 h-12 bg-hover rounded flex items-center justify-center flex-shrink-0">
                     {song.album_art_path ? (
                       <AlbumArtImage
@@ -525,3 +596,10 @@ function formatDuration(seconds: number): string {
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
+
+
+
+
+
+
+
