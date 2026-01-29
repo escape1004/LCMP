@@ -227,6 +227,9 @@ export const QueueView = () => {
         setVideoPath(null);
         setSyncOffsetMs(0);
         setMediaMode("cover");
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        }
         return;
       }
 
@@ -238,6 +241,9 @@ export const QueueView = () => {
       setVideoPath(null);
       setSyncOffsetMs(0);
       setMediaMode("cover");
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
     }
   };
 
@@ -248,6 +254,9 @@ export const QueueView = () => {
       setMediaMode("cover");
       setVideoError(null);
       setIsVideoReady(false);
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
       return;
     }
     loadVideoSync(currentSong.id);
