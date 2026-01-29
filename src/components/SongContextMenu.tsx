@@ -218,15 +218,18 @@ export const SongContextMenu = ({
       >
         태그 추가
       </button>
-      <button
-        onClick={async () => {
-          await handleConnectVideo();
-          onClose();
-        }}
-        className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-hover transition-colors whitespace-nowrap"
-      >
-        동영상 연결
-      </button>
+      <div className="h-px bg-border my-0" />
+      {!videoSync && (
+        <button
+          onClick={async () => {
+            await handleConnectVideo();
+            onClose();
+          }}
+          className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-hover transition-colors whitespace-nowrap"
+        >
+          동영상 연결
+        </button>
+      )}
       {videoSync && (
         <button
           onClick={async () => {
@@ -238,7 +241,6 @@ export const SongContextMenu = ({
           동영상 연결 해제
         </button>
       )}
-      <div className="h-px bg-border my-0" />
       <button
         onClick={() => {
           onEditMetadata(song);
