@@ -2,8 +2,9 @@
 use crate::models::Folder;
 use crate::commands::player::extract_metadata;
 use crate::commands::song::{normalize_tags, set_song_tags};
-use rusqlite::{Result, params};
+use rusqlite::{Result, params, params_from_iter};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::Path;
 use walkdir::WalkDir;
 
@@ -75,6 +76,8 @@ pub(crate) fn scan_folder_for_songs(conn: &rusqlite::Connection, folder_path: &s
     let audio_extensions = ["mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "wma"];
     
     let walker = WalkDir::new(folder_path).into_iter();
+    let mut scanned_paths: HashSet<String> = HashSet::new();
+    let normalized_folder = folder_path.replace("\\", "/");
     
     for entry in walker {
         let entry = entry.map_err(|e| format!("파일 스캔 오류: {}", e))?;
@@ -97,6 +100,8 @@ pub(crate) fn scan_folder_for_songs(conn: &rusqlite::Connection, folder_path: &s
         
         // 파일 경로를 문자열로 변환
         let file_path = path.to_string_lossy().to_string();
+        let normalized_path = file_path.replace("\\", "/");
+        scanned_paths.insert(normalized_path);
         
         // DB에 존재하는지 확인
         let exists: bool = conn
@@ -219,6 +224,42 @@ pub(crate) fn scan_folder_for_songs(conn: &rusqlite::Connection, folder_path: &s
                 .map_err(|e| format!("메타데이터 업데이트 오류: {}", e))?;
             }
         }
+    }
+
+    // 스캔 결과에 없는 파일은 DB에서 제거 (폴더 경로 내부만)
+    let like_pattern = normalized_folder.clone();
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, file_path FROM songs WHERE REPLACE(file_path, '\\', '/') LIKE ?1 || '%'",
+        )
+        .map_err(|e| format!("스캔 정리 쿼리 오류: {}", e))?;
+    let db_songs = stmt
+        .query_map([&like_pattern], |row| {
+            let id: i64 = row.get(0)?;
+            let file_path: String = row.get(1)?;
+            Ok((id, file_path))
+        })
+        .map_err(|e| format!("스캔 정리 조회 오류: {}", e))?;
+
+    let mut missing_ids: Vec<i64> = Vec::new();
+    for song in db_songs {
+        let (id, path) = song.map_err(|e| format!("스캔 정리 로드 오류: {}", e))?;
+        let normalized = path.replace("\\", "/");
+        if !scanned_paths.contains(&normalized) {
+            missing_ids.push(id);
+        }
+    }
+
+    if !missing_ids.is_empty() {
+        let placeholders = std::iter::repeat("?")
+            .take(missing_ids.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        conn.execute(
+            &format!("DELETE FROM songs WHERE id IN ({})", placeholders),
+            params_from_iter(missing_ids),
+        )
+        .map_err(|e| format!("스캔 정리 삭제 오류: {}", e))?;
     }
     
     // 스캔 완료 후 웨이브폼 없는 곡을 백그라운드에서 생성
