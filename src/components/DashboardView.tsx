@@ -5,8 +5,6 @@ import {
   Folder,
   Music4,
   Tag,
-  User,
-  Flame,
   AlertCircle,
 } from "lucide-react";
 import {

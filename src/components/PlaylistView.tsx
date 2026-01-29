@@ -80,8 +80,11 @@ export const PlaylistView = () => {
   
   // 임시 컬럼 너비 상태 (드래그 중에만 사용)
   const [tempColumnWidths, setTempColumnWidths] = useState<Record<ColumnKey, number>>(columnWidths);
-  const ROW_HEIGHT = 56;
+  const ROW_HEIGHT = 44;
   const OVERSCAN = 6;
+  const MIN_COLUMN_WIDTH = 80;
+  const MIN_ALBUM_ART_WIDTH = 80;
+  const MAX_ALBUM_ART_WIDTH = 200;
   
   // 검색 기능
   const [searchQuery, setSearchQuery] = useState('');
@@ -165,11 +168,6 @@ export const PlaylistView = () => {
 
   // 컬럼 너비 리사이즈 핸들러
   const handleResizeStart = (e: React.MouseEvent, columnKey: ColumnKey) => {
-    // 앨범 커버는 리사이즈 불가
-    if (columnKey === 'album_art') {
-      return;
-    }
-    
     e.preventDefault();
     e.stopPropagation();
     setResizingColumn(columnKey);
@@ -182,7 +180,11 @@ export const PlaylistView = () => {
 
     const handleMouseMove = (e: MouseEvent) => {
       const diff = e.clientX - resizeStartX;
-      const newWidth = Math.max(80, resizeStartWidth + diff); // 최소 너비 80px
+      const minWidth = resizingColumn === 'album_art' ? MIN_ALBUM_ART_WIDTH : MIN_COLUMN_WIDTH;
+      let newWidth = Math.max(minWidth, resizeStartWidth + diff); // 컬럼별 최소 너비
+      if (resizingColumn === 'album_art') {
+        newWidth = Math.min(MAX_ALBUM_ART_WIDTH, newWidth);
+      }
       // 임시 상태만 업데이트 (드래그 중에는 저장하지 않음)
       setTempColumnWidths((prev) => ({ ...prev, [resizingColumn]: newWidth }));
     };
@@ -615,15 +617,23 @@ export const PlaylistView = () => {
     }
   };
 
+  const albumArtWidth = visibleColumns.includes("album_art")
+    ? tempColumnWidths.album_art ?? MIN_ALBUM_ART_WIDTH
+    : ROW_HEIGHT;
+  const rowHeight = Math.max(
+    ROW_HEIGHT,
+    Math.min(MAX_ALBUM_ART_WIDTH, albumArtWidth)
+  );
+
   const totalRows = sortedSongs.length;
-  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN);
   const endIndex = Math.min(
     totalRows,
-    Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN
+    Math.ceil((scrollTop + viewportHeight) / rowHeight) + OVERSCAN
   );
   const visibleSongs = sortedSongs.slice(startIndex, endIndex);
-  const topSpacer = startIndex * ROW_HEIGHT;
-  const bottomSpacer = Math.max(0, (totalRows - endIndex) * ROW_HEIGHT);
+  const topSpacer = startIndex * rowHeight;
+  const bottomSpacer = Math.max(0, (totalRows - endIndex) * rowHeight);
 
   return (
     <div className="flex-1 flex flex-col bg-bg-primary min-h-0">
@@ -771,8 +781,11 @@ export const PlaylistView = () => {
                   : '100%',
                 borderCollapse: 'collapse'
               }} className="bg-bg-primary">
-            <thead className="sticky top-0 bg-bg-primary border-b border-border z-10">
-              <tr className="bg-bg-primary relative" style={{ position: 'relative' }}>
+            <thead className="sticky top-0 bg-bg-primary z-30">
+              <tr
+                className="bg-bg-primary relative"
+                style={{ position: 'relative', boxShadow: "0 1px 0 0 rgba(0, 0, 0, 0.45)" }}
+              >
                 {visibleColumns.map((columnKey) => {
                   const column = AVAILABLE_COLUMNS.find(c => c.key === columnKey);
                   if (!column) return null;
@@ -795,7 +808,7 @@ export const PlaylistView = () => {
                         minWidth: `${width}px`,
                         maxWidth: `${width}px`,
                       }}
-                      className={`text-left px-4 py-3 text-xs font-semibold text-text-muted uppercase tracking-wide select-none relative overflow-hidden text-ellipsis whitespace-nowrap transition-colors ${
+                      className={`text-left px-3 py-3 text-xs font-semibold text-text-muted uppercase tracking-wide select-none relative overflow-hidden text-ellipsis whitespace-nowrap transition-colors bg-bg-primary ${
                         isAlbumArt ? 'bg-bg-primary group-hover:bg-hover' : ''
                       } ${
                         isSortable ? 'cursor-pointer' : 'cursor-default'
@@ -816,24 +829,22 @@ export const PlaylistView = () => {
                           {sortIcon}
                         </div>
                       </div>
-                      {/* 리사이즈 핸들 (앨범 커버 제외) */}
-                      {!isAlbumArt && (
-                        <div
-                          className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-accent transition-colors group"
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleResizeStart(e, columnKey);
-                          }}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                          }}
-                          style={{ zIndex: 10 }}
-                        >
-                          <div className="absolute top-0 right-0 w-0.5 h-full bg-transparent group-hover:bg-accent" />
-                        </div>
-                      )}
+                      {/* 리사이즈 핸들 */}
+                      <div
+                        className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-accent transition-colors group"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleResizeStart(e, columnKey);
+                        }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        style={{ zIndex: 10 }}
+                      >
+                        <div className="absolute top-0 right-0 w-0.5 h-full bg-transparent group-hover:bg-accent" />
+                      </div>
                     </th>
                   );
                 })}
@@ -868,30 +879,45 @@ export const PlaylistView = () => {
                 // songsVersion/waveform_data를 key에 포함해 변경 시 리렌더 보장
                 const rowKey = `${song.id}-${songsVersion}-${song.waveform_data ? '1' : '0'}`;
                 
-      const renderCell = (columnKey: ColumnKey) => {
+      const renderCell = (columnKey: ColumnKey, columnWidth: number) => {
         switch (columnKey) {
                     case 'album_art':
+                      {
+                        const artSize = Math.max(
+                          32,
+                          Math.min(columnWidth - 24, rowHeight - 4)
+                        );
+                        const artStyle = { width: `${artSize}px`, height: `${artSize}px` };
                       return (
-                        <div className="flex items-center justify-center w-full h-12">
+                        <div className="flex items-center justify-center w-full h-full p-0.5">
                           {song.album_art_path ? (
-                            <AlbumArtImage
-                              filePath={song.file_path}
-                              path={song.album_art_path}
-                              alt={song.album || 'Album'}
-                              className="w-12 h-12 object-cover rounded transition-colors duration-150 group-hover:ring-1 group-hover:ring-border"
-                              fallback={
-                                <div className="w-12 h-12 bg-hover rounded flex items-center justify-center transition-colors duration-150 group-hover:ring-1 group-hover:ring-border">
-                                  <Disc3 className="w-5 h-5 text-text-muted/70" />
-                                </div>
-                              }
-                            />
+                            <div
+                              className="rounded transition-colors duration-150 group-hover:ring-1 group-hover:ring-border overflow-hidden flex-none aspect-square"
+                              style={artStyle}
+                            >
+                              <AlbumArtImage
+                                filePath={song.file_path}
+                                path={song.album_art_path}
+                                alt={song.album || 'Album'}
+                                className="w-full h-full object-contain"
+                                fallback={
+                                  <div className="w-full h-full bg-hover flex items-center justify-center">
+                                    <Disc3 className="w-5 h-5 text-text-muted/70" />
+                                  </div>
+                                }
+                              />
+                            </div>
                           ) : (
-                            <div className="w-12 h-12 bg-hover rounded flex items-center justify-center transition-colors duration-150 group-hover:ring-1 group-hover:ring-border">
+                            <div
+                              className="bg-hover rounded flex items-center justify-center transition-colors duration-150 group-hover:ring-1 group-hover:ring-border flex-none aspect-square"
+                              style={artStyle}
+                            >
                               <Disc3 className="w-5 h-5 text-text-muted/70" />
                             </div>
                           )}
                         </div>
                       );
+                      }
                     case 'file_name':
                       const fileName = song.file_path.split(/[/\\]/).pop() || '파일명 없음';
                       const hasFileName = !!song.file_path;
@@ -984,7 +1010,7 @@ export const PlaylistView = () => {
                     }`}
                     style={{
                       position: 'relative',
-                      height: `${ROW_HEIGHT}px`
+                      height: `${rowHeight}px`
                     }}
                     onDoubleClick={() => handleSongDoubleClick(song)}
                   >
@@ -999,14 +1025,14 @@ export const PlaylistView = () => {
                             minWidth: `${width}px`,
                             maxWidth: `${width}px`,
                           }}
-                          className={`px-4 py-3 text-sm overflow-hidden text-ellipsis whitespace-nowrap transition-colors duration-150 ${
+                          className={`px-3 py-2 text-sm overflow-hidden text-ellipsis whitespace-nowrap transition-colors duration-150 ${
                             columnKey === 'album_art' 
-                              ? `px-2 ${hasWaveform ? 'bg-bg-primary group-hover:bg-hover' : 'bg-bg-primary'}` 
+                              ? `px-2 py-1 ${hasWaveform ? 'bg-bg-primary group-hover:bg-hover' : 'bg-bg-primary'}` 
                               : ''
                           }`}
                           onContextMenu={(e) => handleSongContextMenu(e, song)}
                         >
-                          {renderCell(columnKey)}
+                          {renderCell(columnKey, width)}
                         </td>
                       );
                     })}

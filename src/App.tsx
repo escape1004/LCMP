@@ -264,7 +264,7 @@ function App() {
             <PlaylistView />
           )}
           <div 
-            className={`absolute inset-0 bg-bg-primary transform transition-transform duration-300 ease-in-out z-10 ${
+            className={`absolute inset-0 bg-bg-primary transform transition-transform duration-300 ease-in-out z-40 ${
               isOpen ? 'translate-y-0' : 'translate-y-full'
             }`}
           >

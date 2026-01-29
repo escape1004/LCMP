@@ -11,7 +11,6 @@ export const PlayerControls = () => {
   const { 
     isPlaying, 
     currentSong, 
-    duration, 
     volume, 
     isMuted,
     shuffle,

@@ -13,8 +13,6 @@ import { Button } from "./ui/button";
 import { useModalBodyClass } from "../hooks/useModalBodyClass";
 import { useEscapeToClose } from "../hooks/useEscapeToClose";
 
-type PrimaryMenu = "dashboard" | "folders" | "playlists";
-
 export const Sidebar = () => {
   const {
     folders,

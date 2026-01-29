@@ -453,8 +453,8 @@ export const QueueView = () => {
 
         <div
           ref={mediaContainerRef}
-          className={`rounded-lg flex items-center justify-center shadow-lg overflow-hidden relative ${
-            mediaMode === "video" ? "bg-transparent" : "bg-hover"
+          className={`rounded-lg flex items-center justify-center overflow-hidden relative bg-transparent ${
+            mediaMode === "video" ? "shadow-lg" : "shadow-none"
           } ${
             isFullscreen
               ? "w-full h-full max-w-none min-w-0 rounded-none shadow-none"
@@ -577,16 +577,24 @@ export const QueueView = () => {
                 </div>
               )}
             </>
-          ) : currentSong?.album_art_path ? (
-            <AlbumArtImage
-              filePath={currentSong.file_path}
-              path={currentSong.album_art_path}
-              alt={currentSong.title || "Album Art"}
-              className="w-full h-full object-cover"
-              fallback={<Disc3 className="w-12 h-12 text-text-muted/70" />}
-            />
           ) : (
-            <Disc3 className="w-12 h-12 text-text-muted/70" />
+            <div
+              className={`aspect-square w-[70%] max-w-[520px] min-w-[240px] rounded-lg bg-hover flex items-center justify-center shadow-lg ${
+                isFullscreen ? "w-[50%] max-w-[640px]" : ""
+              }`}
+            >
+              {currentSong?.album_art_path ? (
+                <AlbumArtImage
+                  filePath={currentSong.file_path}
+                  path={currentSong.album_art_path}
+                  alt={currentSong.title || "Album Art"}
+                  className="w-full h-full object-contain"
+                  fallback={<Disc3 className="w-12 h-12 text-text-muted/70" />}
+                />
+              ) : (
+                <Disc3 className="w-12 h-12 text-text-muted/70" />
+              )}
+            </div>
           )}
         </div>
 
@@ -621,7 +629,7 @@ export const QueueView = () => {
                     onMouseLeave={() =>
                       setSyncTooltip((prev) => ({ ...prev, visible: false }))
                     }
-                    onMouseMove={(e) => {
+                    onMouseMove={() => {
                       if (!syncSliderRef.current) return;
                       const rect = syncSliderRef.current.getBoundingClientRect();
                       const percent = (syncOffsetMs + 10000) / 20000;

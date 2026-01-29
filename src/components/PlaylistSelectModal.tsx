@@ -1,7 +1,6 @@
 ﻿import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { Button } from "./ui/button";
-import { Playlist } from "../types";
 import { usePlaylistStore } from "../stores/playlistStore";
 import { useModalBodyClass } from "../hooks/useModalBodyClass";
 import { useEscapeToClose } from "../hooks/useEscapeToClose";
