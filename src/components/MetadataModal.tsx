@@ -2,6 +2,7 @@
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { open } from "@tauri-apps/api/dialog";
 import { exists } from "@tauri-apps/api/fs";
+import { invoke } from "@tauri-apps/api/tauri";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -38,6 +39,28 @@ interface MetadataModalProps {
   }) => void | Promise<void>;
 }
 
+type SongMetadataDetails = {
+  title?: string | null;
+  artist?: string | null;
+  album?: string | null;
+  year?: number | null;
+  genre?: string | null;
+  albumArtist?: string | null;
+  trackNumber?: number | null;
+  discNumber?: number | null;
+  comment?: string | null;
+  composer?: string | null;
+  lyricist?: string | null;
+  bpm?: number | null;
+  key?: string | null;
+  copyright?: string | null;
+  encoder?: string | null;
+  isrc?: string | null;
+  publisher?: string | null;
+  subtitle?: string | null;
+  grouping?: string | null;
+};
+
 export const MetadataModal = ({ isOpen, song, onClose, onSave }: MetadataModalProps) => {
   useModalBodyClass(isOpen);
   useEscapeToClose(isOpen, onClose);
@@ -65,11 +88,11 @@ export const MetadataModal = ({ isOpen, song, onClose, onSave }: MetadataModalPr
 
   useEffect(() => {
     if (!isOpen || !song) return;
-    setTitle(song.title || "");
-    setArtist(song.artist || "");
-    setAlbum(song.album || "");
-    setYear(song.year ? String(song.year) : "");
-    setGenre(song.genre || "");
+    setTitle("");
+    setArtist("");
+    setAlbum("");
+    setYear("");
+    setGenre("");
     setAlbumArtPath(song.album_art_path || "");
     setAlbumArtist("");
     setTrackNumber("");
@@ -87,6 +110,44 @@ export const MetadataModal = ({ isOpen, song, onClose, onSave }: MetadataModalPr
     setGrouping("");
     setShowAdvanced(false);
   }, [isOpen, song]);
+
+  useEffect(() => {
+    if (!isOpen || !song) return;
+    let cancelled = false;
+    const loadDetails = async () => {
+      try {
+        const details = await invoke<SongMetadataDetails>("get_song_metadata_details", {
+          songId: song.id,
+        });
+        if (cancelled || !details) return;
+        if (details.title !== undefined) setTitle(details.title ?? "");
+        if (details.artist !== undefined) setArtist(details.artist ?? "");
+        if (details.album !== undefined) setAlbum(details.album ?? "");
+        if (details.year !== undefined) setYear(details.year !== null ? String(details.year) : "");
+        if (details.genre !== undefined) setGenre(details.genre ?? "");
+        if (details.albumArtist !== undefined) setAlbumArtist(details.albumArtist ?? "");
+        if (details.trackNumber !== undefined) setTrackNumber(details.trackNumber !== null ? String(details.trackNumber) : "");
+        if (details.discNumber !== undefined) setDiscNumber(details.discNumber !== null ? String(details.discNumber) : "");
+        if (details.comment !== undefined) setComment(details.comment ?? "");
+        if (details.composer !== undefined) setComposer(details.composer ?? "");
+        if (details.lyricist !== undefined) setLyricist(details.lyricist ?? "");
+        if (details.bpm !== undefined) setBpm(details.bpm !== null ? String(details.bpm) : "");
+        if (details.key !== undefined) setKey(details.key ?? "");
+        if (details.copyright !== undefined) setCopyright(details.copyright ?? "");
+        if (details.encoder !== undefined) setEncoder(details.encoder ?? "");
+        if (details.isrc !== undefined) setIsrc(details.isrc ?? "");
+        if (details.publisher !== undefined) setPublisher(details.publisher ?? "");
+        if (details.subtitle !== undefined) setSubtitle(details.subtitle ?? "");
+        if (details.grouping !== undefined) setGrouping(details.grouping ?? "");
+      } catch (error) {
+        console.error("Failed to load metadata details:", error);
+      }
+    };
+    loadDetails();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, song?.id]);
 
   const parseNumber = (value: string) => {
     const trimmed = value.trim();

@@ -31,6 +31,30 @@ pub struct CachePruneResult {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SongMetadataDetails {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub year: Option<i32>,
+    pub genre: Option<String>,
+    pub album_artist: Option<String>,
+    pub track_number: Option<u32>,
+    pub disc_number: Option<u32>,
+    pub comment: Option<String>,
+    pub composer: Option<String>,
+    pub lyricist: Option<String>,
+    pub bpm: Option<u32>,
+    pub key: Option<String>,
+    pub copyright: Option<String>,
+    pub encoder: Option<String>,
+    pub isrc: Option<String>,
+    pub publisher: Option<String>,
+    pub subtitle: Option<String>,
+    pub grouping: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VideoSync {
     pub song_id: i64,
     pub video_path: String,
@@ -1213,6 +1237,190 @@ pub async fn get_song_by_id(song_id: i64) -> Result<Song, String> {
     }
     
     Ok(song)
+}
+
+fn parse_u32_from_text(value: Option<String>) -> Option<u32> {
+    value.and_then(|v| v.trim().parse::<u32>().ok())
+}
+
+fn get_id3_text_frame(tag: &id3::Tag, frame_id: &str) -> Option<String> {
+    use id3::frame::Content;
+    tag.get(frame_id).and_then(|frame| match frame.content() {
+        Content::Text(text) => Some(text.clone()),
+        Content::ExtendedText(ext) => Some(ext.value.clone()),
+        _ => None,
+    })
+}
+
+fn read_mp3_metadata_details(file_path: &str) -> SongMetadataDetails {
+    let mut details = SongMetadataDetails {
+        title: None,
+        artist: None,
+        album: None,
+        year: None,
+        genre: None,
+        album_artist: None,
+        track_number: None,
+        disc_number: None,
+        comment: None,
+        composer: None,
+        lyricist: None,
+        bpm: None,
+        key: None,
+        copyright: None,
+        encoder: None,
+        isrc: None,
+        publisher: None,
+        subtitle: None,
+        grouping: None,
+    };
+
+    if let Ok(tag) = id3::Tag::read_from_path(file_path) {
+        details.title = tag.title().map(|v| v.to_string());
+        details.artist = tag.artist().map(|v| v.to_string());
+        details.album = tag.album().map(|v| v.to_string());
+        details.year = tag.year();
+        details.genre = tag.genre().map(|v| v.to_string());
+        details.album_artist = tag.album_artist().map(|v| v.to_string());
+        details.track_number = tag.track();
+        details.disc_number = tag.disc();
+        details.comment = tag.comments().next().map(|c| c.text.clone());
+        details.composer = get_id3_text_frame(&tag, "TCOM");
+        details.lyricist = get_id3_text_frame(&tag, "TEXT");
+        details.bpm = parse_u32_from_text(get_id3_text_frame(&tag, "TBPM"));
+        details.key = get_id3_text_frame(&tag, "TKEY");
+        details.copyright = get_id3_text_frame(&tag, "TCOP");
+        details.encoder = get_id3_text_frame(&tag, "TENC");
+        details.isrc = get_id3_text_frame(&tag, "TSRC");
+        details.publisher = get_id3_text_frame(&tag, "TPUB");
+        details.subtitle = get_id3_text_frame(&tag, "TIT3");
+        details.grouping = get_id3_text_frame(&tag, "TIT1");
+    }
+
+    details
+}
+
+fn read_flac_metadata_details(file_path: &str) -> SongMetadataDetails {
+    let mut details = SongMetadataDetails {
+        title: None,
+        artist: None,
+        album: None,
+        year: None,
+        genre: None,
+        album_artist: None,
+        track_number: None,
+        disc_number: None,
+        comment: None,
+        composer: None,
+        lyricist: None,
+        bpm: None,
+        key: None,
+        copyright: None,
+        encoder: None,
+        isrc: None,
+        publisher: None,
+        subtitle: None,
+        grouping: None,
+    };
+
+    if let Ok(tag) = metaflac::Tag::read_from_path(file_path) {
+        if let Some(vorbis) = tag.vorbis_comments() {
+            let get_value = |key: &str| -> Option<String> {
+                vorbis.comments.get(key).and_then(|values| values.first()).cloned()
+            };
+            details.title = get_value("TITLE");
+            details.artist = get_value("ARTIST");
+            details.album = get_value("ALBUM");
+            details.year = get_value("DATE").and_then(|v| v.trim().parse::<i32>().ok());
+            details.genre = get_value("GENRE");
+            details.album_artist = get_value("ALBUMARTIST");
+            details.track_number = parse_u32_from_text(get_value("TRACKNUMBER"));
+            details.disc_number = parse_u32_from_text(get_value("DISCNUMBER"));
+            details.comment = get_value("COMMENT");
+            details.composer = get_value("COMPOSER");
+            details.lyricist = get_value("LYRICIST");
+            details.bpm = parse_u32_from_text(get_value("BPM"));
+            details.key = get_value("KEY");
+            details.copyright = get_value("COPYRIGHT");
+            details.encoder = get_value("ENCODER");
+            details.isrc = get_value("ISRC");
+            details.publisher = get_value("PUBLISHER");
+            details.subtitle = get_value("SUBTITLE");
+            details.grouping = get_value("GROUPING");
+        }
+    }
+
+    details
+}
+
+#[tauri::command]
+pub async fn get_song_metadata_details(song_id: i64) -> Result<SongMetadataDetails, String> {
+    let conn = get_connection().map_err(|e| e.to_string())?;
+    let file_path: String = conn
+        .query_row(
+            "SELECT file_path FROM songs WHERE id = ?1",
+            [song_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Failed to load song path: {}", e))?;
+
+    if !Path::new(&file_path).exists() {
+        return Ok(SongMetadataDetails {
+            title: None,
+            artist: None,
+            album: None,
+            year: None,
+            genre: None,
+            album_artist: None,
+            track_number: None,
+            disc_number: None,
+            comment: None,
+            composer: None,
+            lyricist: None,
+            bpm: None,
+            key: None,
+            copyright: None,
+            encoder: None,
+            isrc: None,
+            publisher: None,
+            subtitle: None,
+            grouping: None,
+        });
+    }
+
+    let extension = Path::new(&file_path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_lowercase())
+        .unwrap_or_default();
+
+    let details = match extension.as_str() {
+        "mp3" => read_mp3_metadata_details(&file_path),
+        "flac" => read_flac_metadata_details(&file_path),
+        _ => SongMetadataDetails {
+            title: None,
+            artist: None,
+            album: None,
+            year: None,
+            genre: None,
+            album_artist: None,
+            track_number: None,
+            disc_number: None,
+            comment: None,
+            composer: None,
+            lyricist: None,
+            bpm: None,
+            key: None,
+            copyright: None,
+            encoder: None,
+            isrc: None,
+            publisher: None,
+            subtitle: None,
+            grouping: None,
+        },
+    };
+
+    Ok(details)
 }
 
 #[tauri::command]
