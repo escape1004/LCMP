@@ -76,6 +76,8 @@ export const QueueView = () => {
   const lastVideoTimeRef = useRef<number>(0);
   const lastPlayerTimeRef = useRef<number>(0);
   const isSeekingRef = useRef(false);
+  const [showClickIcon, setShowClickIcon] = useState<null | "play" | "pause">(null);
+  const clickIconTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [fullscreenTooltip, setFullscreenTooltip] = useState<{
     visible: boolean;
     left: number;
@@ -142,6 +144,17 @@ export const QueueView = () => {
       return;
     }
     await togglePlayPause();
+  };
+
+  const triggerClickIcon = () => {
+    if (clickIconTimerRef.current) {
+      clearTimeout(clickIconTimerRef.current);
+    }
+    const nextIcon: "play" | "pause" = isPlaying ? "pause" : "play";
+    setShowClickIcon(nextIcon);
+    clickIconTimerRef.current = setTimeout(() => {
+      setShowClickIcon(null);
+    }, 520);
   };
 
 
@@ -482,6 +495,17 @@ export const QueueView = () => {
             <Film className="w-3.5 h-3.5" />
             동영상
           </button>
+          {showClickIcon && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+              <div className="click-icon-bubble">
+                {showClickIcon === "play" ? (
+                  <Play className="w-8 h-8" />
+                ) : (
+                  <Pause className="w-8 h-8" />
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div
@@ -510,6 +534,7 @@ export const QueueView = () => {
                   }}
                   onClick={() => {
                     handleVideoToggle();
+                    triggerClickIcon();
                   }}
                   onLoadStart={() => {
                     setIsVideoLoading(true);
@@ -619,6 +644,10 @@ export const QueueView = () => {
               className={`aspect-square w-[70%] max-w-[520px] min-w-[240px] rounded-lg bg-hover flex items-center justify-center shadow-lg ${
                 isFullscreen ? "w-[50%] max-w-[640px]" : ""
               }`}
+              onClick={() => {
+                handleVideoToggle();
+                triggerClickIcon();
+              }}
             >
               {currentSong?.album_art_path ? (
                 <AlbumArtImage

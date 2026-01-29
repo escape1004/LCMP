@@ -170,6 +170,29 @@
     }
   }
 
+  @keyframes fadeScale {
+    0% {
+      opacity: 0;
+      transform: scale(0.7);
+    }
+    35% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.05);
+    }
+  }
+
+  .click-icon-bubble {
+    background: rgba(0, 0, 0, 0.5);
+    color: #fff;
+    border-radius: 9999px;
+    padding: 16px;
+    animation: fadeScale 0.52s ease-out;
+  }
+
   /* 체크박스 전역 스타일 - 디스코드 테마 */
   input[type="checkbox"] {
     @apply w-4 h-4 rounded border bg-bg-sidebar text-accent;
