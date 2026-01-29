@@ -35,7 +35,7 @@ const normalizeFsPath = (value: string) => {
 };
 
 export const QueueView = () => {
-  const { queue, currentIndex, playSongAtIndex, removeFromQueue } = useQueueStore();
+  const { queue, currentIndex, playSongAtIndex, removeFromQueue, reorderQueue } = useQueueStore();
   const {
     currentTime,
     duration,
@@ -60,6 +60,10 @@ export const QueueView = () => {
   const syncTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const saveDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncSliderRef = useRef<HTMLInputElement | null>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const queueListRef = useRef<HTMLDivElement | null>(null);
+  const dragRowHeightRef = useRef(0);
   const [syncTooltip, setSyncTooltip] = useState<{ visible: boolean; left: number }>({
     visible: false,
     left: 0,
@@ -94,9 +98,40 @@ export const QueueView = () => {
 
   const videoSrc = useMemo(() => (videoPath ? toFileSrc(normalizeFsPath(videoPath)) : null), [videoPath]);
 
-  const handleSongClick = async (index: number) => {
+  const handleSongDoubleClick = async (index: number) => {
     await playSongAtIndex(index);
   };
+
+  useEffect(() => {
+    if (dragIndex === null) return;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!queueListRef.current || dragRowHeightRef.current === 0) return;
+      const rect = queueListRef.current.getBoundingClientRect();
+      const y = event.clientY - rect.top + queueListRef.current.scrollTop;
+      const nextIndex = Math.max(
+        0,
+        Math.min(queue.length - 1, Math.floor(y / dragRowHeightRef.current))
+      );
+      setDragOverIndex(nextIndex);
+    };
+
+    const handlePointerUp = () => {
+      if (dragIndex !== null && dragOverIndex !== null && dragIndex !== dragOverIndex) {
+        reorderQueue(dragIndex, dragOverIndex);
+      }
+      setDragIndex(null);
+      setDragOverIndex(null);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [dragIndex, dragOverIndex, queue.length, reorderQueue]);
 
   const handleVideoToggle = async () => {
     if (!playerCurrentSong && currentIndex !== null) {
@@ -395,7 +430,7 @@ export const QueueView = () => {
             }`}
           >
             <ImageIcon className="w-3.5 h-3.5" />
-            커버
+            앨범 커버
           </button>
           <button
             type="button"
@@ -659,7 +694,10 @@ export const QueueView = () => {
       <div className="w-80 border-l border-border overflow-y-auto bg-bg-primary h-full flex flex-col">
         <div className="p-4 flex-1 flex flex-col">
           {/* 대기열 목록 */}
-          <div className="space-y-1 flex-1 flex flex-col">
+          <div
+            ref={queueListRef}
+            className={`space-y-1 flex-1 flex flex-col ${dragIndex !== null ? "select-none" : ""}`}
+          >
             {queue.length === 0 ? (
               <div className="flex-1 flex items-center justify-center">
                 <div className="text-text-muted text-sm text-center">
@@ -674,9 +712,20 @@ export const QueueView = () => {
                     index === currentIndex
                       ? "bg-accent/20 text-text-primary"
                       : "text-text-primary"
-                  }`}
-                  onClick={() => handleSongClick(index)}
+                  } ${
+                    dragOverIndex === index && dragIndex !== index
+                      ? "ring-1 ring-accent/60"
+                      : ""
+                  } ${dragIndex === index ? "opacity-70" : ""}`}
+                  onDoubleClick={() => handleSongDoubleClick(index)}
                   onContextMenu={(e) => handleSongContextMenu(e, song, index)}
+                  onPointerDown={(event) => {
+                    if (event.button !== 0) return;
+                    dragRowHeightRef.current =
+                      (event.currentTarget as HTMLDivElement).getBoundingClientRect().height || 0;
+                    setDragIndex(index);
+                    setDragOverIndex(index);
+                  }}
                 >
                   {/* 앨범 커버 미리보기 */}
                   <div className="w-12 h-12 bg-hover rounded flex items-center justify-center flex-shrink-0">
@@ -773,10 +822,3 @@ function formatDuration(seconds: number): string {
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
-
-
-
-
-
-
-
