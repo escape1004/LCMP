@@ -11,7 +11,7 @@ import { PlaylistSelectModal } from "./PlaylistSelectModal";
 import { MetadataModal } from "./MetadataModal";
 import { TagModal } from "./TagModal";
 import { Song } from "../types";
-import { Disc3, Film, ImageIcon } from "lucide-react";
+import { Disc3, Film, ImageIcon, Maximize2, SlidersHorizontal, Pause, Play } from "lucide-react";
 import { toFileSrc } from "../lib/tauri";
 
 type VideoSync = {
@@ -36,7 +36,15 @@ const normalizeFsPath = (value: string) => {
 
 export const QueueView = () => {
   const { queue, currentIndex, playSongAtIndex, removeFromQueue } = useQueueStore();
-  const { currentTime, isPlaying, togglePlayPause } = usePlayerStore();
+  const {
+    currentTime,
+    duration,
+    isPlaying,
+    togglePlayPause,
+    seek,
+    setCurrentTime,
+    currentSong: playerCurrentSong,
+  } = usePlayerStore();
   const { playlists } = usePlaylistStore();
   const { updateSong, refreshCurrentList } = useSongStore();
   const { showToast } = useToastStore();
@@ -57,6 +65,19 @@ export const QueueView = () => {
     left: 0,
   });
   const syncPercent = Math.round(((syncOffsetMs + 10000) / 20000) * 100);
+  const [isSyncOpen, setIsSyncOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const mediaContainerRef = useRef<HTMLDivElement | null>(null);
+  const fullscreenSliderRef = useRef<HTMLInputElement | null>(null);
+  const [fullscreenTooltip, setFullscreenTooltip] = useState<{
+    visible: boolean;
+    left: number;
+    time: number;
+  }>({
+    visible: false,
+    left: 0,
+    time: 0,
+  });
 
   const [contextMenu, setContextMenu] = useState<{
     song: Song;
@@ -75,6 +96,23 @@ export const QueueView = () => {
 
   const handleSongClick = async (index: number) => {
     await playSongAtIndex(index);
+  };
+
+  const handleVideoToggle = async () => {
+    if (!playerCurrentSong && currentIndex !== null) {
+      await playSongAtIndex(currentIndex);
+      return;
+    }
+    await togglePlayPause();
+  };
+
+  const handleFullscreenSeek = (next: number) => {
+    if (playerCurrentSong) {
+      seek(next).catch(() => {});
+      return;
+    }
+    setCurrentTime(next);
+    invoke("seek_audio", { time: next }).catch(() => {});
   };
 
   const handleSongContextMenu = (e: ReactMouseEvent, song: Song, index: number) => {
@@ -234,6 +272,7 @@ export const QueueView = () => {
     videoRef.current.muted = true;
   }, [videoPath]);
 
+
   useEffect(() => {
     if (mediaMode !== "video") return;
     if (!videoRef.current || !videoSrc) return;
@@ -304,11 +343,38 @@ export const QueueView = () => {
     };
   }, [syncOffsetMs, currentSong?.id, videoPath]);
 
+  useEffect(() => {
+    if (mediaMode !== "video") {
+      setIsSyncOpen(false);
+    }
+  }, [mediaMode]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  const handleToggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        return;
+      }
+      if (!mediaContainerRef.current) return;
+      await mediaContainerRef.current.requestFullscreen();
+    } catch (error) {
+      console.error("Failed to toggle fullscreen:", error);
+    }
+  };
+
 
   return (
-    <div className="h-full w-full flex overflow-hidden bg-bg-primary">
+    <div className="h-full w-full flex overflow-hidden bg-bg-primary relative">
       {/* 좌측: 앨범 커버/동영상 */}
-      <div className="flex-1 flex flex-col items-center justify-center bg-bg-primary h-full gap-4">
+      <div className="flex-1 flex flex-col items-center justify-center bg-bg-primary h-full gap-4 relative">
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -342,8 +408,13 @@ export const QueueView = () => {
         </div>
 
         <div
-          className={`w-[60vh] max-w-[70%] rounded-lg flex items-center justify-center shadow-lg overflow-hidden relative ${
+          ref={mediaContainerRef}
+          className={`rounded-lg flex items-center justify-center shadow-lg overflow-hidden relative ${
             mediaMode === "video" ? "bg-transparent" : "bg-hover"
+          } ${
+            isFullscreen
+              ? "w-full h-full max-w-none min-w-0 rounded-none shadow-none"
+              : "w-[70%] max-w-[960px] min-w-[320px]"
           }`}
         >
           {mediaMode === "video" ? (
@@ -356,7 +427,7 @@ export const QueueView = () => {
                   muted
                   playsInline
                   onClick={() => {
-                    togglePlayPause();
+                    handleVideoToggle();
                   }}
                   onLoadStart={() => {
                     setIsVideoLoading(true);
@@ -392,6 +463,75 @@ export const QueueView = () => {
                   {videoError ?? "동영상 로딩 중..."}
                 </div>
               )}
+              {isFullscreen && (
+                <div className="absolute left-0 right-0 bottom-0 pb-6 px-8 z-10">
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleVideoToggle}
+                      className="h-9 w-9 rounded-full text-text-primary shadow-md flex items-center justify-center hover:bg-[#2b2d31] transition-colors"
+                    >
+                      {isPlaying ? (
+                        <Pause className="w-4 h-4" />
+                      ) : (
+                        <Play className="w-4 h-4" />
+                      )}
+                    </button>
+                    <div className="flex-1 relative">
+                      {fullscreenTooltip.visible && (
+                        <div
+                          className="absolute -top-7 px-2 py-1 rounded-md text-[11px] text-white bg-[#18191c] shadow-md whitespace-nowrap"
+                          style={{ left: `${fullscreenTooltip.left}px`, transform: "translateX(-50%)" }}
+                        >
+                          {formatDuration(fullscreenTooltip.time)}
+                          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-[#18191c]" />
+                        </div>
+                      )}
+                      <input
+                        ref={fullscreenSliderRef}
+                        type="range"
+                        min={0}
+                        max={Math.max(1, duration)}
+                        step={0.1}
+                        value={currentTime}
+                        onChange={(e) => {
+                          const next = Number(e.target.value);
+                          handleFullscreenSeek(next);
+                        }}
+                        onMouseEnter={() =>
+                          setFullscreenTooltip((prev) => ({ ...prev, visible: true }))
+                        }
+                        onMouseLeave={() =>
+                          setFullscreenTooltip((prev) => ({ ...prev, visible: false }))
+                        }
+                        onMouseMove={(e) => {
+                          if (!fullscreenSliderRef.current) return;
+                          const rect = fullscreenSliderRef.current.getBoundingClientRect();
+                          const x = Math.min(Math.max(e.clientX - rect.left, 0), rect.width);
+                          const percent = rect.width > 0 ? x / rect.width : 0;
+                          const time = Math.max(0, duration * percent);
+                          setFullscreenTooltip({ visible: true, left: x, time });
+                        }}
+                        className="w-full discord-slider cursor-pointer"
+                        style={{
+                          background: `linear-gradient(90deg, #5865f2 ${
+                            duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0
+                          }%, #2f3136 ${
+                            duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0
+                          }%)`,
+                        }}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => document.exitFullscreen().catch(() => {})}
+                      className="h-9 w-9 rounded-full text-text-primary shadow-md flex items-center justify-center hover:bg-[#2b2d31] transition-colors"
+                    >
+                      <Maximize2 className="w-4 h-4 rotate-180" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           ) : currentSong?.album_art_path ? (
             <AlbumArtImage
@@ -407,72 +547,100 @@ export const QueueView = () => {
         </div>
 
         {videoPath && mediaMode === "video" && (
-          <div className="w-[60vh] max-w-[70%]">
-            <div className="flex items-center justify-between text-xs text-text-muted mb-2">
-              <span>싱크 조절</span>
-              <span>{(syncOffsetMs / 1000).toFixed(1)}s</span>
-            </div>
-            <div className="relative">
-              {syncTooltip.visible && (
-                <div
-                  className="absolute -top-7 px-2 py-1 rounded-md text-[11px] text-white bg-[#18191c] shadow-md whitespace-nowrap"
-                  style={{ left: `${syncTooltip.left}px`, transform: "translateX(-50%)" }}
-                >
-                  {(syncOffsetMs / 1000).toFixed(1)}s
+          <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-2">
+            {isSyncOpen && (
+              <div className="w-72 rounded-lg border border-border bg-[#2b2d31] shadow-lg p-3">
+                <div className="flex items-center justify-between text-xs text-text-muted mb-2">
+                  <span>싱크 조절</span>
+                  <span>{(syncOffsetMs / 1000).toFixed(1)}s</span>
                 </div>
-              )}
-              <input
-                ref={syncSliderRef}
-                type="range"
-                min={-10000}
-                max={10000}
-                step={100}
-                value={syncOffsetMs}
-                onChange={(e) => setSyncOffsetMs(Number(e.target.value))}
-                onMouseEnter={() =>
-                  setSyncTooltip((prev) => ({ ...prev, visible: true }))
-                }
-                onMouseLeave={() =>
-                  setSyncTooltip((prev) => ({ ...prev, visible: false }))
-                }
-                onMouseMove={(e) => {
-                  if (!syncSliderRef.current) return;
-                  const rect = syncSliderRef.current.getBoundingClientRect();
-                  const percent = (syncOffsetMs + 10000) / 20000;
-                  const left = rect.width * percent;
-                  setSyncTooltip({ visible: true, left });
-                }}
-                style={{
-                  background: `linear-gradient(90deg, #5865f2 ${syncPercent}%, #2f3136 ${syncPercent}%)`,
-                }}
-                className="w-full discord-slider cursor-pointer"
-              />
-            </div>
-            <div className="flex items-center justify-between mt-2">
-              <div className="flex items-center gap-2 rounded-md border border-border bg-[#2b2d31] p-1">
-                <button
-                  type="button"
-                  onClick={() => setSyncOffsetMs((prev) => Math.max(-10000, prev - 500))}
-                  className="px-2 py-1 text-[11px] rounded-sm text-text-muted hover:text-white hover:bg-[#3f4147] transition-colors"
-                >
-                  -0.5s
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSyncOffsetMs(0)}
-                  className="px-2 py-1 text-[11px] rounded-sm text-text-muted hover:text-white hover:bg-[#3f4147] transition-colors"
-                >
-                  초기화
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSyncOffsetMs((prev) => Math.min(10000, prev + 500))}
-                  className="px-2 py-1 text-[11px] rounded-sm text-text-muted hover:text-white hover:bg-[#3f4147] transition-colors"
-                >
-                  +0.5s
-                </button>
+                <div className="relative">
+                  {syncTooltip.visible && (
+                    <div
+                      className="absolute -top-7 px-2 py-1 rounded-md text-[11px] text-white bg-[#18191c] shadow-md whitespace-nowrap"
+                      style={{ left: `${syncTooltip.left}px`, transform: "translateX(-50%)" }}
+                    >
+                      {(syncOffsetMs / 1000).toFixed(1)}s
+                    </div>
+                  )}
+                  <input
+                    ref={syncSliderRef}
+                    type="range"
+                    min={-10000}
+                    max={10000}
+                    step={100}
+                    value={syncOffsetMs}
+                    onChange={(e) => setSyncOffsetMs(Number(e.target.value))}
+                    onMouseEnter={() =>
+                      setSyncTooltip((prev) => ({ ...prev, visible: true }))
+                    }
+                    onMouseLeave={() =>
+                      setSyncTooltip((prev) => ({ ...prev, visible: false }))
+                    }
+                    onMouseMove={(e) => {
+                      if (!syncSliderRef.current) return;
+                      const rect = syncSliderRef.current.getBoundingClientRect();
+                      const percent = (syncOffsetMs + 10000) / 20000;
+                      const left = rect.width * percent;
+                      setSyncTooltip({ visible: true, left });
+                    }}
+                    style={{
+                      background: `linear-gradient(90deg, #5865f2 ${syncPercent}%, #2f3136 ${syncPercent}%)`,
+                    }}
+                    className="w-full discord-slider cursor-pointer"
+                  />
+                </div>
+                <div className="flex items-center justify-between mt-2">
+                  <div className="flex items-center gap-2 rounded-md border border-border bg-[#232428] p-1">
+                    <button
+                      type="button"
+                      onClick={() => setSyncOffsetMs((prev) => Math.max(-10000, prev - 500))}
+                      className="px-2 py-1 text-[11px] rounded-sm text-text-muted hover:text-white hover:bg-[#3f4147] transition-colors"
+                    >
+                      -0.5s
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSyncOffsetMs(0)}
+                      className="px-2 py-1 text-[11px] rounded-sm text-text-muted hover:text-white hover:bg-[#3f4147] transition-colors"
+                    >
+                      초기화
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSyncOffsetMs((prev) => Math.min(10000, prev + 500))}
+                      className="px-2 py-1 text-[11px] rounded-sm text-text-muted hover:text-white hover:bg-[#3f4147] transition-colors"
+                    >
+                      +0.5s
+                    </button>
+                  </div>
+                  <div className="text-[11px] text-text-muted">범위: ±10.0s</div>
+                </div>
               </div>
-              <div className="text-[11px] text-text-muted">범위: ±10.0s</div>
+            )}
+            <div className="relative group">
+              <div className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded-md text-[11px] text-white bg-[#18191c] shadow-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                싱크 조절
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSyncOpen((prev) => !prev)}
+                className="h-9 w-9 rounded-full border border-border bg-[#2b2d31] text-text-primary shadow-md flex items-center justify-center transition-colors"
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="relative group">
+              <div className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded-md text-[11px] text-white bg-[#18191c] shadow-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                {isFullscreen ? "전체화면 종료" : "전체화면"}
+              </div>
+              <button
+                type="button"
+                onClick={handleToggleFullscreen}
+                className="h-9 w-9 rounded-full border border-border bg-[#2b2d31] text-text-primary shadow-md flex items-center justify-center transition-colors"
+              >
+                <Maximize2 className={`w-4 h-4 ${isFullscreen ? "text-white" : ""}`} />
+              </button>
             </div>
           </div>
         )}
