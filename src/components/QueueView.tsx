@@ -49,7 +49,7 @@ export const QueueView = () => {
   const { updateSong, refreshCurrentList } = useSongStore();
   const { showToast } = useToastStore();
 
-  const currentSong = currentIndex !== null ? queue[currentIndex] : null;
+  const currentSong = currentIndex !== null ? queue[currentIndex] : playerCurrentSong;
   const [mediaMode, setMediaMode] = useState<"cover" | "video">("cover");
   const [videoPath, setVideoPath] = useState<string | null>(null);
   const [syncOffsetMs, setSyncOffsetMs] = useState(0);
@@ -73,6 +73,9 @@ export const QueueView = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const mediaContainerRef = useRef<HTMLDivElement | null>(null);
   const fullscreenSliderRef = useRef<HTMLInputElement | null>(null);
+  const lastVideoTimeRef = useRef<number>(0);
+  const lastPlayerTimeRef = useRef<number>(0);
+  const isSeekingRef = useRef(false);
   const [fullscreenTooltip, setFullscreenTooltip] = useState<{
     visible: boolean;
     left: number;
@@ -140,6 +143,7 @@ export const QueueView = () => {
     }
     await togglePlayPause();
   };
+
 
   const handleFullscreenSeek = (next: number) => {
     if (playerCurrentSong) {
@@ -335,28 +339,57 @@ export const QueueView = () => {
   }, [isPlaying, mediaMode, isVideoReady, videoPath]);
 
   useEffect(() => {
+    if (!videoRef.current || !isVideoReady || !videoPath) return;
+    if (mediaMode !== "video") return;
+
+    const prev = lastPlayerTimeRef.current;
+    const delta = Math.abs(currentTime - prev);
+    lastPlayerTimeRef.current = currentTime;
+
+    // Seek jump only: sync once to avoid flicker from continuous seeking.
+    if (delta > 0.8) {
+      isSeekingRef.current = true;
+      const video = videoRef.current;
+      const targetTime = Math.max(0, currentTime + syncOffsetMs / 1000);
+      if (Number.isFinite(video.duration)) {
+        const maxTime = Math.max(0, video.duration - 0.05);
+        video.currentTime = Math.min(targetTime, maxTime);
+      } else {
+        video.currentTime = targetTime;
+      }
+      setTimeout(() => {
+        isSeekingRef.current = false;
+      }, 300);
+    }
+  }, [currentTime, syncOffsetMs, mediaMode, isVideoReady, videoPath]);
+
+  useEffect(() => {
     if (syncTimerRef.current) {
       clearInterval(syncTimerRef.current);
       syncTimerRef.current = null;
     }
     if (!videoRef.current || !isVideoReady || !videoPath) return;
     if (mediaMode !== "video") return;
+    if (!isPlaying) return;
 
     syncTimerRef.current = setInterval(() => {
       const video = videoRef.current;
       if (!video) return;
+      if (isSeekingRef.current) return;
       const targetTime = Math.max(0, currentTime + syncOffsetMs / 1000);
+      const delta = Math.abs(video.currentTime - targetTime);
+      if (delta < 1.0) return;
+
       if (Number.isFinite(video.duration)) {
         const maxTime = Math.max(0, video.duration - 0.05);
-        if (targetTime > maxTime) {
-          video.pause();
-          return;
+        const clamped = Math.min(targetTime, maxTime);
+        if (Math.abs(video.currentTime - clamped) > 0.35) {
+          video.currentTime = clamped;
         }
-      }
-      if (Math.abs(video.currentTime - targetTime) > 0.25) {
+      } else {
         video.currentTime = targetTime;
       }
-    }, 250);
+    }, 1200);
 
     return () => {
       if (syncTimerRef.current) {
@@ -364,7 +397,7 @@ export const QueueView = () => {
         syncTimerRef.current = null;
       }
     };
-  }, [currentTime, syncOffsetMs, mediaMode, isVideoReady, videoPath]);
+  }, [currentTime, syncOffsetMs, mediaMode, isVideoReady, videoPath, isPlaying]);
 
   useEffect(() => {
     if (!currentSong || !videoPath) return;
@@ -470,6 +503,11 @@ export const QueueView = () => {
                   className="w-full h-auto max-h-full object-contain"
                   muted
                   playsInline
+                  onSeeking={() => {}}
+                  onSeeked={() => {}}
+                  onCanPlay={() => {
+                    setIsVideoLoading(false);
+                  }}
                   onClick={() => {
                     handleVideoToggle();
                   }}
@@ -481,7 +519,6 @@ export const QueueView = () => {
                     setIsVideoReady(true);
                     setIsVideoLoading(false);
                   }}
-                  onCanPlay={() => setIsVideoLoading(false)}
                   onWaiting={() => setIsVideoLoading(true)}
                   onPlaying={() => setIsVideoLoading(false)}
                   onError={() => {
