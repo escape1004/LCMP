@@ -1144,6 +1144,84 @@ pub async fn get_songs_by_folder(folder_id: i64) -> Result<SongList, String> {
 #[tauri::command]
 pub async fn get_songs_by_playlist(playlist_id: i64) -> Result<SongList, String> {
     let conn = get_connection().map_err(|e| e.to_string())?;
+
+    let (is_dynamic, filter_tags_json, filter_mode) = conn
+        .query_row(
+            "SELECT is_dynamic, filter_tags, filter_mode FROM playlists WHERE id = ?1",
+            params![playlist_id],
+            |row| {
+                let is_dynamic: i32 = row.get(0)?;
+                let filter_tags: Option<String> = row.get(1)?;
+                let filter_mode: Option<String> = row.get(2)?;
+                Ok((is_dynamic, filter_tags, filter_mode))
+            },
+        )
+        .map_err(|e| e.to_string())?;
+
+    if is_dynamic == 1 {
+        let filter_tags: Vec<String> = filter_tags_json
+            .and_then(|value| serde_json::from_str(&value).ok())
+            .unwrap_or_default();
+        if filter_tags.is_empty() {
+            return Ok(SongList { songs: Vec::new() });
+        }
+        let filter_mode = filter_mode.unwrap_or_else(|| "OR".to_string()).to_uppercase();
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, file_path, title, artist, album, duration, year, genre, album_art_path, created_at, updated_at, waveform_data
+                 FROM songs
+                 ORDER BY title ASC",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let song_iter = stmt
+            .query_map([], |row| Song::from_row(row))
+            .map_err(|e| e.to_string())?;
+
+        let mut songs = Vec::new();
+        let filter_set: Vec<String> = filter_tags
+            .iter()
+            .map(|tag| tag.to_lowercase())
+            .collect();
+
+        for song in song_iter {
+            let mut song = song.map_err(|e| e.to_string())?;
+            let file_tags = merge_file_metadata(&mut song);
+            let db_tags = fetch_song_tags(&conn, song.id).unwrap_or_default();
+            if !db_tags.is_empty() {
+                song.tags = db_tags;
+            } else if !file_tags.is_empty() {
+                song.tags = file_tags.clone();
+                let _ = set_song_tags(&conn, song.id, file_tags);
+            } else {
+                song.tags = Vec::new();
+            }
+            if song.album_art_path.is_none() {
+                if let Ok(Some(path)) = resolve_album_art_cache_path(&song.file_path) {
+                    song.album_art_path = Some(path);
+                }
+            }
+
+            let song_tag_set: Vec<String> = song
+                .tags
+                .iter()
+                .map(|tag| tag.to_lowercase())
+                .collect();
+
+            let matches = if filter_mode == "AND" {
+                filter_set.iter().all(|tag| song_tag_set.contains(tag))
+            } else {
+                filter_set.iter().any(|tag| song_tag_set.contains(tag))
+            };
+
+            if matches {
+                songs.push(song);
+            }
+        }
+
+        return Ok(SongList { songs });
+    }
     
     let mut stmt = conn
         .prepare(

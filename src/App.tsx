@@ -293,8 +293,8 @@ function App() {
       <PlaylistModal
         isOpen={isEmptyPlaylistModalOpen}
         onClose={() => setIsEmptyPlaylistModalOpen(false)}
-        onConfirm={async (name, description, isDynamic) => {
-          await createPlaylist(name, description, isDynamic);
+        onConfirm={async (name, description, isDynamic, filterTags, filterMode) => {
+          await createPlaylist(name, description, isDynamic, filterTags, filterMode);
         }}
       />
     </div>

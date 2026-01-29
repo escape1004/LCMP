@@ -80,13 +80,15 @@ export const PlaylistSelectModal = ({
             </div>
           )}
 
-          {playlists.length === 0 ? (
+          {playlists.filter((playlist) => playlist.is_dynamic !== 1).length === 0 ? (
             <div className="text-center py-8 text-text-muted">
               플레이리스트가 없습니다.
             </div>
           ) : (
             <div className="space-y-2">
-              {playlists.map((playlist) => (
+              {playlists
+                .filter((playlist) => playlist.is_dynamic !== 1)
+                .map((playlist) => (
                 <button
                   key={playlist.id}
                   onClick={() => handleSelect(playlist.id)}

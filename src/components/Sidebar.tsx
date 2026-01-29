@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState } from "react";
-import { LayoutDashboard, Plus, Folder, ListMusic, X } from "lucide-react";
+import { LayoutDashboard, Plus, Folder, ListMusic, X, Zap } from "lucide-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { useFolderStore } from "../stores/folderStore";
 import { usePlaylistStore } from "../stores/playlistStore";
@@ -141,13 +141,15 @@ export const Sidebar = () => {
   const handlePlaylistConfirm = async (
     name: string,
     description?: string,
-    isDynamic?: boolean
+    isDynamic?: boolean,
+    filterTags?: string[],
+    filterMode?: "OR" | "AND"
   ) => {
     if (editingPlaylist) {
-      await updatePlaylist(editingPlaylist, name, description, isDynamic);
+      await updatePlaylist(editingPlaylist, name, description, isDynamic, filterTags, filterMode);
       setEditingPlaylist(null);
     } else {
-      await createPlaylist(name, description, isDynamic);
+      await createPlaylist(name, description, isDynamic, filterTags, filterMode);
     }
   };
 
@@ -445,8 +447,11 @@ export const Sidebar = () => {
                                       : "hover:bg-hover text-text-primary"
                                   } ${snapshot.isDragging ? "opacity-50" : ""}`}
                                 >
-                                  <span className="flex-1 text-sm font-medium truncate">
+                                  <span className="flex-1 text-sm font-medium truncate flex items-center gap-1">
                                     {playlist.name}
+                                    {playlist.is_dynamic === 1 && (
+                                      <Zap className="w-3.5 h-3.5 text-text-primary/80" />
+                                    )}
                                   </span>
                                 </div>
                               )}

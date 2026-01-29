@@ -2,6 +2,7 @@ use crate::database::get_connection;
 use crate::models::Playlist;
 use rusqlite::{Result, params};
 use serde::{Deserialize, Serialize};
+use serde_json;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PlaylistList {
@@ -33,11 +34,25 @@ pub async fn create_playlist(
     name: String,
     description: Option<String>,
     is_dynamic: Option<bool>,
+    filter_tags: Option<Vec<String>>,
+    filter_mode: Option<String>,
 ) -> Result<Playlist, String> {
     let conn = get_connection().map_err(|e| e.to_string())?;
     
     let is_dynamic_value: i32 = if is_dynamic.unwrap_or(false) { 1 } else { 0 };
     let description_str = description.unwrap_or_default();
+    let filter_tags_json = if is_dynamic_value == 1 {
+        filter_tags
+            .and_then(|tags| serde_json::to_string(&tags).ok())
+            .or_else(|| Some("[]".to_string()))
+    } else {
+        None
+    };
+    let filter_mode_value = if is_dynamic_value == 1 {
+        filter_mode.unwrap_or_else(|| "OR".to_string())
+    } else {
+        "OR".to_string()
+    };
     
     // 기존 플레이리스트 개수로 order 설정
     let playlist_count: i64 = conn
@@ -45,8 +60,15 @@ pub async fn create_playlist(
         .unwrap_or(0);
     
     conn.execute(
-        "INSERT INTO playlists (name, description, is_dynamic, \"order\") VALUES (?1, ?2, ?3, ?4)",
-        params![name, description_str, is_dynamic_value, playlist_count],
+        "INSERT INTO playlists (name, description, is_dynamic, filter_tags, filter_mode, \"order\") VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            name,
+            description_str,
+            is_dynamic_value,
+            filter_tags_json,
+            filter_mode_value,
+            playlist_count
+        ],
     )
     .map_err(|e| e.to_string())?;
     
@@ -69,17 +91,46 @@ pub async fn update_playlist(
     name: String,
     description: Option<String>,
     is_dynamic: Option<bool>,
+    filter_tags: Option<Vec<String>>,
+    filter_mode: Option<String>,
 ) -> Result<Playlist, String> {
     let conn = get_connection().map_err(|e| e.to_string())?;
     
     let is_dynamic_value: i32 = if is_dynamic.unwrap_or(false) { 1 } else { 0 };
     let description_str = description.unwrap_or_default();
+    let filter_tags_json = if is_dynamic_value == 1 {
+        filter_tags
+            .and_then(|tags| serde_json::to_string(&tags).ok())
+            .or_else(|| Some("[]".to_string()))
+    } else {
+        None
+    };
+    let filter_mode_value = if is_dynamic_value == 1 {
+        filter_mode.unwrap_or_else(|| "OR".to_string())
+    } else {
+        "OR".to_string()
+    };
     
     conn.execute(
-        "UPDATE playlists SET name = ?1, description = ?2, is_dynamic = ?3, updated_at = datetime('now') WHERE id = ?4",
-        params![name, description_str, is_dynamic_value, playlist_id],
+        "UPDATE playlists SET name = ?1, description = ?2, is_dynamic = ?3, filter_tags = ?4, filter_mode = ?5, updated_at = datetime('now') WHERE id = ?6",
+        params![
+            name,
+            description_str,
+            is_dynamic_value,
+            filter_tags_json,
+            filter_mode_value,
+            playlist_id
+        ],
     )
     .map_err(|e| e.to_string())?;
+
+    if is_dynamic_value == 1 {
+        conn.execute(
+            "DELETE FROM playlist_songs WHERE playlist_id = ?1",
+            params![playlist_id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
     
     let mut stmt = conn
         .prepare("SELECT id, name, description, is_dynamic, filter_tags, filter_mode, \"order\", created_at, updated_at FROM playlists WHERE id = ?1")

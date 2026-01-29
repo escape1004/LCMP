@@ -8,7 +8,7 @@ import { useToastStore } from '../stores/toastStore';
 import { Song } from '../types';
 import { invoke } from '@tauri-apps/api/tauri';
 import { ColumnSelectorDialog } from './ColumnSelectorDialog';
-import { ArrowDown, ArrowUp, Disc3, Filter, Play, Search, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Disc3, Filter, Play, Search, X, Zap } from 'lucide-react';
 import { Tooltip } from './ui/tooltip';
 import { Input } from './ui/input';
 import { SongContextMenu } from './SongContextMenu';
@@ -62,6 +62,10 @@ export const PlaylistView = () => {
   }, [storeSongs]);
   
   const { playSong, addMultipleToQueue, clearQueue, playSongAtIndex } = useQueueStore();
+  const currentPlaylist = selectedPlaylistId !== null
+    ? playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? null
+    : null;
+  const isDynamicPlaylist = currentPlaylist?.is_dynamic === 1;
   const { showToast } = useToastStore();
   const [totalSize, setTotalSize] = useState<number>(0);
   const [isLoadingSize, setIsLoadingSize] = useState(false);
@@ -641,7 +645,10 @@ export const PlaylistView = () => {
       <div className="flex-shrink-0 px-4 pt-4 pb-2">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-text-primary">
-            {getTitle()}
+            <span className="flex items-center gap-1">
+              {getTitle()}
+              {isDynamicPlaylist && <Zap className="w-4 h-4 text-text-primary/80" />}
+            </span>
             {(selectedFolderId !== null || selectedPlaylistId !== null) && (
               <span className="text-xs text-text-muted font-normal ml-2">
                 {' '}
@@ -1089,7 +1096,9 @@ export const PlaylistView = () => {
           onClose={() => setContextMenu(null)}
           onAddToQueue={handleAddToQueue}
           onAddToPlaylist={selectedPlaylistId === null ? handleAddToPlaylist : undefined}
-          onRemoveFromPlaylist={selectedPlaylistId !== null ? handleRemoveFromPlaylist : undefined}
+          onRemoveFromPlaylist={
+            selectedPlaylistId !== null && !isDynamicPlaylist ? handleRemoveFromPlaylist : undefined
+          }
           onEditMetadata={handleEditMetadata}
           onEditTags={handleEditTags}
         />

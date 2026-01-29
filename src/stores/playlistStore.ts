@@ -7,8 +7,21 @@ interface PlaylistStore {
   selectedPlaylistId: number | null;
   isLoading: boolean;
   loadPlaylists: () => Promise<void>;
-  createPlaylist: (name: string, description?: string, isDynamic?: boolean) => Promise<void>;
-  updatePlaylist: (playlistId: number, name: string, description?: string, isDynamic?: boolean) => Promise<void>;
+  createPlaylist: (
+    name: string,
+    description?: string,
+    isDynamic?: boolean,
+    filterTags?: string[],
+    filterMode?: "OR" | "AND"
+  ) => Promise<void>;
+  updatePlaylist: (
+    playlistId: number,
+    name: string,
+    description?: string,
+    isDynamic?: boolean,
+    filterTags?: string[],
+    filterMode?: "OR" | "AND"
+  ) => Promise<void>;
   updatePlaylistOrder: (playlistIds: number[]) => Promise<void>;
   removePlaylist: (playlistId: number) => Promise<void>;
   selectPlaylist: (playlistId: number | null) => void;
@@ -30,15 +43,24 @@ export const usePlaylistStore = create<PlaylistStore>((set) => ({
     }
   },
 
-  createPlaylist: async (name: string, description?: string, isDynamic?: boolean) => {
+  createPlaylist: async (
+    name: string,
+    description?: string,
+    isDynamic?: boolean,
+    filterTags?: string[],
+    filterMode?: "OR" | "AND"
+  ) => {
     try {
       const playlist = await invoke<Playlist>('create_playlist', {
         name,
         description,
         isDynamic,
+        filterTags,
+        filterMode,
       });
       set((state) => ({
         playlists: [...state.playlists, playlist],
+        selectedPlaylistId: playlist.id,
       }));
     } catch (error) {
       console.error('Failed to create playlist:', error);
@@ -46,13 +68,22 @@ export const usePlaylistStore = create<PlaylistStore>((set) => ({
     }
   },
 
-  updatePlaylist: async (playlistId: number, name: string, description?: string, isDynamic?: boolean) => {
+  updatePlaylist: async (
+    playlistId: number,
+    name: string,
+    description?: string,
+    isDynamic?: boolean,
+    filterTags?: string[],
+    filterMode?: "OR" | "AND"
+  ) => {
     try {
       const playlist = await invoke<Playlist>('update_playlist', {
         playlistId,
         name,
         description,
         isDynamic,
+        filterTags,
+        filterMode,
       });
       set((state) => ({
         playlists: state.playlists.map((p) => (p.id === playlistId ? playlist : p)),

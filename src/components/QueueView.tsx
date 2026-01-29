@@ -73,7 +73,6 @@ export const QueueView = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const mediaContainerRef = useRef<HTMLDivElement | null>(null);
   const fullscreenSliderRef = useRef<HTMLInputElement | null>(null);
-  const lastVideoTimeRef = useRef<number>(0);
   const lastPlayerTimeRef = useRef<number>(0);
   const isSeekingRef = useRef(false);
   const [showClickIcon, setShowClickIcon] = useState<null | "play" | "pause">(null);
