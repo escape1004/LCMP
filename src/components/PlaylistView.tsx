@@ -704,7 +704,7 @@ export const PlaylistView = () => {
               <Filter className="w-3.5 h-3.5 ml-auto text-text-muted" />
             </button>
             {isSearchFilterOpen && (
-              <div className="absolute right-0 mt-2 w-44 rounded-md border border-border bg-bg-sidebar shadow-lg z-20 overflow-hidden">
+              <div className="absolute right-0 mt-2 w-44 rounded-md border border-border bg-bg-sidebar shadow-lg z-40 overflow-hidden">
                 <button
                   type="button"
                   onClick={() => {
