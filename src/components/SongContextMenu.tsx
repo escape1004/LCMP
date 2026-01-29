@@ -156,6 +156,15 @@ export const SongContextMenu = ({
     }
   };
 
+  const handleOpenFileLocation = async () => {
+    try {
+      await invoke('open_song_location', { filePath: song.file_path });
+    } catch (error) {
+      console.error('Failed to open file location:', error);
+      showToast('파일 위치를 여는 데 실패했습니다.');
+    }
+  };
+
   const menu = (
     <div
       ref={menuRef}
@@ -217,6 +226,15 @@ export const SongContextMenu = ({
         className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-hover transition-colors whitespace-nowrap"
       >
         태그 추가
+      </button>
+      <button
+        onClick={async () => {
+          await handleOpenFileLocation();
+          onClose();
+        }}
+        className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-hover transition-colors whitespace-nowrap"
+      >
+        파일 위치 열기
       </button>
       <div className="h-px bg-border my-0" />
       {!videoSync && (

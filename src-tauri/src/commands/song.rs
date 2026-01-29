@@ -8,6 +8,7 @@ use id3::TagLike;
 use serde_json;
 use std::path::{Path, PathBuf};
 use std::fs;
+use std::process::Command;
 use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -824,6 +825,23 @@ fn resolve_album_art_cache_path(file_path: &str) -> Result<Option<String>, Strin
 #[tauri::command]
 pub async fn get_album_art_cache_path(file_path: String) -> Result<Option<String>, String> {
     resolve_album_art_cache_path(&file_path)
+}
+
+#[tauri::command]
+pub async fn open_song_location(file_path: String) -> Result<(), String> {
+    if file_path.trim().is_empty() {
+        return Err("File path is empty".to_string());
+    }
+    if cfg!(target_os = "windows") {
+        let normalized = file_path.replace("/", "\\");
+        Command::new("explorer")
+            .arg("/select,")
+            .arg(&normalized)
+            .spawn()
+            .map_err(|e| format!("Failed to open file location: {}", e))?;
+        return Ok(());
+    }
+    Err("Unsupported platform".to_string())
 }
 
 #[tauri::command]
