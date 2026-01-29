@@ -779,47 +779,51 @@ fn get_cache_root() -> Option<PathBuf> {
     cache_dir().map(|root| root.join("lcmp").join("album_art"))
 }
 
-#[tauri::command]
-pub async fn get_album_art_cache_path(file_path: String) -> Result<Option<String>, String> {
-    if !Path::new(&file_path).exists() {
+fn resolve_album_art_cache_path(file_path: &str) -> Result<Option<String>, String> {
+    if !Path::new(file_path).exists() {
         return Ok(None);
     }
-    
+
     let cache_root = if let Some(root) = get_cache_root() {
         root
     } else {
         return Ok(None);
     };
-    
+
     fs::create_dir_all(&cache_root)
         .map_err(|e| format!("Failed to create cache directory: {}", e))?;
-    
-    let cache_key = compute_cache_key(&file_path)?;
-    
+
+    let cache_key = compute_cache_key(file_path)?;
+
     if let Some(existing) = pick_album_art_path(&cache_root, &cache_key) {
         return Ok(Some(existing.to_string_lossy().to_string()));
     }
-    
-    let extension = Path::new(&file_path)
+
+    let extension = Path::new(file_path)
         .extension()
         .and_then(|ext| ext.to_str())
         .map(|s| s.to_lowercase());
-    
+
     let extracted = match extension.as_deref() {
-        Some("mp3") => extract_embedded_art_mp3(&file_path)?,
-        Some("flac") => extract_embedded_art_flac(&file_path)?,
+        Some("mp3") => extract_embedded_art_mp3(file_path)?,
+        Some("flac") => extract_embedded_art_flac(file_path)?,
         _ => None,
     };
-    
+
     if let Some((data, mime)) = extracted {
         let ext = extension_from_mime(&mime);
         let output_path = cache_root.join(format!("{}.{}", cache_key, ext));
-        fs::write(&output_path, data)
+        fs::write(&output_path, &data)
             .map_err(|e| format!("Failed to write album art cache: {}", e))?;
         return Ok(Some(output_path.to_string_lossy().to_string()));
     }
-    
+
     Ok(None)
+}
+
+#[tauri::command]
+pub async fn get_album_art_cache_path(file_path: String) -> Result<Option<String>, String> {
+    resolve_album_art_cache_path(&file_path)
 }
 
 #[tauri::command]
@@ -1107,6 +1111,11 @@ pub async fn get_songs_by_folder(folder_id: i64) -> Result<SongList, String> {
         } else {
             song.tags = Vec::new();
         }
+        if song.album_art_path.is_none() {
+            if let Ok(Some(path)) = resolve_album_art_cache_path(&song.file_path) {
+                song.album_art_path = Some(path);
+            }
+        }
         songs.push(song);
     }
     
@@ -1145,6 +1154,11 @@ pub async fn get_songs_by_playlist(playlist_id: i64) -> Result<SongList, String>
         } else {
             song.tags = Vec::new();
         }
+        if song.album_art_path.is_none() {
+            if let Ok(Some(path)) = resolve_album_art_cache_path(&song.file_path) {
+                song.album_art_path = Some(path);
+            }
+        }
         songs.push(song);
     }
     
@@ -1179,6 +1193,11 @@ pub async fn get_all_songs() -> Result<SongList, String> {
             let _ = set_song_tags(&conn, song.id, file_tags);
         } else {
             song.tags = Vec::new();
+        }
+        if song.album_art_path.is_none() {
+            if let Ok(Some(path)) = resolve_album_art_cache_path(&song.file_path) {
+                song.album_art_path = Some(path);
+            }
         }
         songs.push(song);
     }
@@ -1234,6 +1253,11 @@ pub async fn get_song_by_id(song_id: i64) -> Result<Song, String> {
         let _ = set_song_tags(&conn, song.id, file_tags);
     } else {
         song.tags = Vec::new();
+    }
+    if song.album_art_path.is_none() {
+        if let Ok(Some(path)) = resolve_album_art_cache_path(&song.file_path) {
+            song.album_art_path = Some(path);
+        }
     }
     
     Ok(song)

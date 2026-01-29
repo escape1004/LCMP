@@ -42,7 +42,11 @@ const isLocalPath = (value: string) => {
 
 const getEmbeddedArtPath = async (filePath: string) => {
   if (embeddedCache.has(filePath)) {
-    return embeddedCache.get(filePath) ?? null;
+    const cached = embeddedCache.get(filePath) ?? null;
+    if (cached) {
+      return cached;
+    }
+    embeddedCache.delete(filePath);
   }
   if (embeddedPending.has(filePath)) {
     return embeddedPending.get(filePath) ?? null;
@@ -116,7 +120,24 @@ export const AlbumArtImage = ({
       setSrc(null);
       sourceRef.current = null;
 
-      // 1) DB/path if exists (optionally preferred)
+      // 1) Embedded art first (unless a custom path is preferred)
+      if (!preferPath && filePath) {
+        if (embeddedCache.has(filePath)) {
+          const embedded = embeddedCache.get(filePath);
+          if (embedded) {
+            sourceRef.current = "embedded";
+            if (await setIfLoaded(embedded)) return;
+          }
+        }
+
+        const embedded = await getEmbeddedArtPath(filePath);
+        if (embedded && !cancelled) {
+          sourceRef.current = "embedded";
+          if (await setIfLoaded(embedded)) return;
+        }
+      }
+
+      // 2) DB/path if exists (or preferred)
       if (path) {
         if (isLocalPath(path)) {
           const localPath = normalizeLocalPath(path);
@@ -135,24 +156,6 @@ export const AlbumArtImage = ({
         } else {
           sourceRef.current = "path";
           if (await setIfLoaded(path, false)) return;
-        }
-      }
-
-      // 2) Embedded cache path if already resolved (only when not preferring a path)
-      if (!preferPath && filePath && embeddedCache.has(filePath)) {
-        const embedded = embeddedCache.get(filePath);
-        if (embedded) {
-          sourceRef.current = "embedded";
-          if (await setIfLoaded(embedded)) return;
-        }
-      }
-
-      // 3) Embedded art extraction (disk cache) in background
-      if (filePath) {
-        const embedded = await getEmbeddedArtPath(filePath);
-        if (embedded && !cancelled) {
-          sourceRef.current = "embedded";
-          await setIfLoaded(embedded);
         }
       }
     };

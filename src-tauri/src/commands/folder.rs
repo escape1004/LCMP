@@ -261,6 +261,31 @@ pub(crate) fn scan_folder_for_songs(conn: &rusqlite::Connection, folder_path: &s
         )
         .map_err(|e| format!("스캔 정리 삭제 오류: {}", e))?;
     }
+
+    // 폴더 내 곡의 앨범 아트 경로가 유효하지 않으면 제거
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, album_art_path FROM songs WHERE REPLACE(file_path, '\\', '/') LIKE ?1 || '%' AND album_art_path IS NOT NULL AND album_art_path != ''",
+        )
+        .map_err(|e| format!("앨범 아트 정리 쿼리 오류: {}", e))?;
+    let art_iter = stmt
+        .query_map([&normalized_folder], |row| {
+            let id: i64 = row.get(0)?;
+            let path: String = row.get(1)?;
+            Ok((id, path))
+        })
+        .map_err(|e| format!("앨범 아트 정리 조회 오류: {}", e))?;
+
+    for entry in art_iter {
+        let (song_id, art_path) = entry.map_err(|e| format!("앨범 아트 정리 로드 오류: {}", e))?;
+        if !Path::new(&art_path).exists() {
+            conn.execute(
+                "UPDATE songs SET album_art_path = NULL WHERE id = ?1",
+                params![song_id],
+            )
+            .map_err(|e| format!("앨범 아트 경로 정리 오류: {}", e))?;
+        }
+    }
     
     // 스캔 완료 후 웨이브폼 없는 곡을 백그라운드에서 생성
     crate::commands::song::generate_waveforms_for_songs_without_waveform(conn);
